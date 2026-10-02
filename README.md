@@ -1,101 +1,109 @@
+<div align="center">
+
+<img src="easyread/web/favicon.svg" width="64" alt="Folio Read 标志">
+
 # Folio Read
 
-基于 [Edwardxlai/easyread](https://github.com/Edwardxlai/easyread) 的个人阅读版本，以论文正文阅读为主，按需展开陪读工具。
+**读论文，做笔记，向自己的资料库提问。**
 
-## 功能
+A desktop paper reader with translation, annotations, and personal-library Q&A.
 
-- 常用阅读工具：拖选或双击选词后复制到其他软件；中文 / 对照英文支持跨段四色荧光笔、下划线、注记和撤销；Ctrl+F 查找阅读正文、文献列表与知识问答页面。
-- 译文链接：网站、DOI、邮箱和 Markdown 链接可点击；已有文章可恢复 PDF 的网页链接，无需重译。无法精确对应的地址保留在折叠的原文链接列表中。
-- Absolutely 配色：暖白 / 炭灰与陶土橙，支持浅色、深色、跟随系统与离线导出。
-- 阅读优先布局：导航按阅读、文献库、知识问答、研究主题排列；题头信息可展开并直达摘要或正文，陪读先提问，模型用齿轮选择，历史与主题收集置后。文献列表分别显示阅读百分比与翻译页数；实际阅读自动标为在读，手动未读与已读状态仍可控制。
-- 阅读界面升级：文献分类、独立问答历史、折叠引文与继续提问；主题列表直接查看研究记录，小窗口与深色模式适配。
-- 知识库问答：自动检索全部收藏论文或指定分类，支持个人笔记；论文引文、个人笔记和模型库外补充分开标注，阅读页可切换当前论文 / 整个资料库。
-- 正文自动配图、点击放大、在原页上重新框选；截图重开和重译后保留，离线阅读版包含图片。
-- 导入 PDF / arXiv 论文、后台翻译、原文对照、划线与笔记。
-- 有原文依据的全文问答，回答附页码、引文和定位链接。
-- 论文概览、章节与页精读；图表、公式解读和原图框选。
-- 围绕共同问题比较 2–8 篇论文。
-- 研究主题、证据记录与待核实问题；Markdown、Obsidian、RIS 导出。
-- Windows 独立应用窗口；阅读界面使用嵌入式 WebView2，双击启动，关闭窗口退出。
+[![Windows 下载](https://img.shields.io/badge/Windows-Download-cc7d5e?logo=windows&logoColor=white)](https://github.com/WANGRUNQIAO0915/folio-read/releases/latest/download/FolioRead-Windows.zip)
+[![版本](https://img.shields.io/github/v/release/WANGRUNQIAO0915/folio-read?color=6c7467)](https://github.com/WANGRUNQIAO0915/folio-read/releases/latest)
+[![MIT](https://img.shields.io/badge/License-MIT-777777)](LICENSE)
 
-Zotero 提供本机条目搜索与关联入口，需要开启 Zotero 本机 API；该连接尚未完成实机验证。
+[下载应用](https://github.com/WANGRUNQIAO0915/folio-read/releases/latest/download/FolioRead-Windows.zip) · [使用与快捷键](docs/reading-tools.md) · [反馈问题](https://github.com/WANGRUNQIAO0915/folio-read/issues)
 
-## Windows 使用
+</div>
 
-下载发布版本中的 `FolioRead-Windows.zip`，解压后双击 `FolioRead.exe`。无需安装 Python。
-独立窗口需要微软 WebView2 Runtime；Windows 10 / 11 通常已具备，缺少时从 [微软官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。
+Folio Read 是一款以阅读为中心的 Windows 桌面应用：把英文论文整理为可阅读的中文正文，对照原文看图表、标注和记笔记，再让 AI 根据当前论文或收藏的资料库回答问题。文献与笔记保存在本机，翻译和问答可连接你自己的模型服务。
 
-EXE 放在已有 `easyread-personal` 目录旁时可沿用文献与配置；单独放进新文件夹，会创建旁边的「FolioRead数据」空库；已有「Folio数据」或「EasyRead数据」时继续沿用。
-「文件 → 打开数据文件夹」可查看实际数据位置。模型配置、文献、笔记和研究记录保存在程序外部。
+## 界面预览
+
+![Folio Read 阅读界面：中文正文、原文对照、标注工具栏与文内查找](docs/images/folio-read-reader.jpg)
+
+*实际应用截图，展示 DPO 示例论文的中文阅读与查找。浅色、深色及跟随系统主题均可使用。*
+
+## 下载与开始使用
+
+目前提供 **Windows 桌面版**，无需安装 Python。
+
+1. [下载 FolioRead-Windows.zip](https://github.com/WANGRUNQIAO0915/folio-read/releases/latest/download/FolioRead-Windows.zip)，解压到一个可写入的文件夹。
+2. 双击 `FolioRead.exe`，打开独立应用窗口。
+3. 在设置中配置翻译与问答模型，再导入 PDF 或 arXiv 论文。
+4. 开始翻译和阅读；选中文字可复制、标注或写注记，打开「陪读」即可提问。
+
+桌面窗口依赖微软 WebView2 Runtime。Windows 10 / 11 通常已具备；缺少时可从 [微软官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。
+
+应用免费开源，**不附带模型或 API 额度**。AI 功能的费用和可用性取决于你连接的服务。完整发布文件与校验信息见 [Releases](https://github.com/WANGRUNQIAO0915/folio-read/releases)。
+
+## 能做什么
+
+| 使用场景 | 功能 |
+| --- | --- |
+| **读懂一篇论文** | 后台翻译、中文与英文对照、原 PDF 页面查看；正文配图、点击放大和手动框选；译文中的网站与 DOI 链接可点击。 |
+| **留下阅读痕迹** | 选中文字复制到其他软件；四色荧光笔、下划线、跨段标注与注记；文内查找、撤销和阅读进度。 |
+| **围绕原文提问** | 对当前论文提问，生成论文概览、章节与页精读，解读图表和公式；回答附引文、页码与原文定位入口。 |
+| **用收藏建立知识库** | 管理文献分类；向全部收藏或指定分类提问，可纳入个人笔记；区分论文依据、笔记与 AI 的库外补充。 |
+| **整理共同研究问题** | 比较 2–8 篇论文，保存研究主题、证据与待核实问题；导出 Markdown、Obsidian 笔记、RIS 和离线阅读文件。 |
+
+### 向整个资料库提问
+
+在「知识问答 → 问资料库」中选择全部收藏或一个分类，也可以在阅读页的陪读面板切换当前论文 / 整个资料库。
+
+例如：
+
+> 这些论文如何衡量城市绿地的降温效果？方法和研究尺度有什么差异？
+
+应用会检索收藏论文和可选的个人笔记，把相关片段交给你选择的模型，并提供引用定位。资料不足时，可允许模型补充通用知识，库外补充会单独标出。
+
+检索使用有容量限制的相关片段，**未命中不代表整个库中没有相关内容**。引用便于核对依据，仍需检查原文是否支持回答。
+
+## 连接自己的模型
+
+| 连接方式 | 需要准备 |
+| --- | --- |
+| DeepSeek 或其他兼容 API | 服务地址、模型名称、自己的 API Key。 |
+| 本机推理服务 | 已启动的、提供兼容 API 的服务及模型；按服务要求填写认证信息。 |
+| Codex / Claude CLI | 在电脑上安装并登录相应 CLI，应用调用其模型配置。 |
+
+「本机已配置」不等于模型一定在本地推理。Codex / Claude CLI 和远端 API 会将任务材料发送至对应服务；如果需要本地处理，请连接在本机运行的推理服务。
 
 ## 阅读操作
 
-选中文字后按 `Ctrl+C`，到其他软件按 `Ctrl+V`。阅读正文顶部的工具栏可以直接复制、标注或写注记；也可先开启荧光笔 / 下划线，再拖选文字连续标注，按 `Esc` 返回选择。
+拖选或双击选词后，按 `Ctrl+C` 复制，到其他软件按 `Ctrl+V` 粘贴。正文顶部的工具栏也提供复制、荧光笔、下划线和注记入口。
 
 | 快捷键 | 操作 |
 | --- | --- |
-| Ctrl+F | 查找当前页面，Enter / Shift+Enter 切换结果 |
-| Ctrl+Shift+H / Ctrl+Shift+U | 荧光笔 / 下划线标注选区 |
-| Ctrl+Shift+N | 给选区或当前段添加注记 |
-| Ctrl+Z | 正文中撤销本次新建标注；文本框中撤销编辑 |
-| 1 / 2 / 3 / 4 | 选区标为黄 / 绿 / 蓝 / 红色 |
-| M / E | 全部批注 / 修改当前段译文 |
+| `Ctrl+F` | 查找当前页面；`Enter` / `Shift+Enter` 切换结果。 |
+| `Ctrl+Shift+H` / `Ctrl+Shift+U` | 给选中文字加荧光笔 / 下划线。 |
+| `Ctrl+Shift+N` | 为选区或当前段添加注记。 |
+| `Ctrl+Z` | 在正文中撤销本次新建标注；在文本框中撤销编辑。 |
+| `Esc` | 退出连续标注模式，返回文字选择。 |
 
-颜色标注保存在阅读文章中，知识问答页面支持文字选择、复制与查找。原 PDF 页面以图片展示，可选文字来自中文正文或“对照”中的英文。
+颜色选择、连续标注及操作范围见 [完整阅读工具说明](docs/reading-tools.md)。
 
-## 从源码运行
+## 数据与备份
 
-需要 Python 3.10 或更新版本；桌面窗口仅在 Windows 验证。
+文献、模型配置、标注、笔记和研究记录保存在本机。独立使用 EXE 时，通常会在程序旁创建「FolioRead数据」文件夹；通过「文件 → 打开数据文件夹」可查看实际位置。备份时保存整个数据文件夹。
 
-```sh
-python -m venv .venv
-# Windows
-.venv\Scripts\python.exe -m pip install ".[desktop]"
-.venv\Scripts\python.exe desktop_launcher.py
-```
+已有「Folio数据」「EasyRead数据」或程序旁的 `easyread-personal` 目录时，应用会沿用现有数据。仓库与发布包不包含个人文献、笔记或认证信息；本机 `config.json` 可能包含 API Key，请勿上传。
 
-需要网页形式时：
+## 当前限制
 
-```sh
-python -m pip install .
-python -m easyread serve --port 8766 --open
-```
+- 当前发布包面向 Windows；macOS / Linux 桌面体验尚未验证。
+- 原 PDF 页面以图片展示；文字选择、复制和标注用于中文正文及对照英文。
+- 自动配图依赖可识别的 PDF 图像边界；复杂矢量图或扫描页可能需要手动框选。
+- Zotero 已提供本机条目搜索与关联入口，需要开启本机 API；该连接尚未完成实机验证。
 
-## 模型
+## 开发与贡献
 
-设置中选择本机已安装并登录的 Codex / Claude，或 DeepSeek、其他兼容 API、本机推理服务。
-EXE 不包含模型本体或 CLI。远端模型会接收你提交的翻译或分析材料。
+想从源码运行、构建 EXE 或参与开发，见 [开发说明](docs/development.md)。发现问题可提交 [Issue](https://github.com/WANGRUNQIAO0915/folio-read/issues)，请附版本、复现步骤及去除个人信息后的截图。功能建议和 Pull Request 也欢迎。
 
-## 构建 Windows EXE
-
-建议在全新的虚拟环境内安装构建依赖，避免将无关组件打包。
-
-```sh
-python -m pip install ".[windows-build]"
-python scripts/build_windows.py
-```
-
-输出位于 `dist/`，包含单文件 EXE、MIT 与第三方许可说明。
-
-## 验证
-
-```sh
-python -m unittest discover tests
-node tests/test_chat_export.cjs
-node tests/test_markup_links.cjs
-```
-
-当前桌面交付完成 81 项 Python 测试及前端回归检查。实际 EXE 验证窗口、PDF 处理、跨段 / 英文标注和注记保存、重开恢复、Ctrl+F、撤销、复制到独立 Windows 文本框与退出；另已验证重复启动和系统保存对话框。
-AI 回答需要回到原文核对；引文存在不等于结论一定正确。
-
-## 数据与隐私
-
-仓库与发布程序排除 API Key、CLI 认证、本机配置、个人文献、笔记、研究记录和界面缓存。
-本机 `config.json` 可能保存你填写的 API Key，请勿提交到仓库。备份阅读资料时保存整个数据目录。
+如果 Folio Read 对你有用，可以在仓库右上角点 **Star**，方便以后找到项目。
 
 ## 来源与许可证
 
-保留上游 [MIT License](LICENSE)，基线提交为 `9e2feee99578c520ac2d0fd056e80bbee33bd897`。
-原版说明保存在 [docs/UPSTREAM-README.md](docs/UPSTREAM-README.md)。本版本与上游无官方关联。
+Folio Read 基于 [Edwardxlai/easyread](https://github.com/Edwardxlai/easyread) 开发，保留上游 [MIT License](LICENSE) 与 [原版说明](docs/UPSTREAM-README.md)。在此基础上增加了个人资料库问答、研究主题、阅读工具与 Windows 桌面交付，并调整了阅读界面。本项目与上游无官方关联。
 
-自动配图优先使用 PDF 的真实图像对象边界；复杂矢量图或扫描页缺少可靠边界时，可用“框选图片”补上。图表在深色模式保留原始颜色。
+上游基线提交：`9e2feee99578c520ac2d0fd056e80bbee33bd897`。
