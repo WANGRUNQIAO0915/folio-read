@@ -58,6 +58,24 @@ window.PR = window.PR || {};
 
   PR.uid = (p) => (p || "n") + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
+  PR.copyText = async function (text) {
+    if (!text) { PR.toast("先选择要复制的文字"); return false; }
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('clipboard unavailable');
+      await navigator.clipboard.writeText(text);
+    } catch (_) {
+      const focus = document.activeElement, selection = getSelection();
+      const ranges = Array.from({length:selection.rangeCount}, (_, i) => selection.getRangeAt(i).cloneRange());
+      const field = PR.el('textarea', {'aria-hidden':'true'}); field.value = text;
+      field.style.cssText = 'position:fixed;left:-10000px;top:0'; document.body.appendChild(field); field.select();
+      const copied = document.execCommand('copy'); field.remove();
+      selection.removeAllRanges(); ranges.forEach(r => selection.addRange(r));
+      if (focus && focus.isConnected) focus.focus({preventScroll:true});
+      if (!copied) { PR.toast('复制未成功，请选中文字后按 Ctrl+C'); return false; }
+    }
+    PR.toast('已复制，可在其他软件中粘贴'); return true;
+  };
+
   PR.debounce = function (fn, ms) {
     let t;
     const f = function () { clearTimeout(t); t = setTimeout(() => fn.apply(this, arguments), ms); };

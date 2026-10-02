@@ -62,6 +62,7 @@
   function zhFor(item) {
     const host = document.getElementById("b-" + item.anchor);
     if (!host) return null;
+    if (item.lang === 'en') return host.querySelectorAll('.en')[item.root_index || 0] || null;
     if (item.key) return host.querySelector('.zh[data-key="' + CSS.escape(item.key) + '"]');
     return PR.$$(".zh", host).find((z) => fullText(z).includes(item.quote)) || host.querySelector(".zh");
   }
@@ -73,16 +74,21 @@
     scope.normalize();
     if (!onlyBlock) lost.clear();
     const items = [];
-    for (const n of PR.myNotes()) if (n.quote) items.push({ n, attrs: { class: "hl c-" + (n.color || "yellow") + (n.style === "underline" ? " s-ul" : "") + (n.kind === "question" ? " q" : ""), "data-note": n.id } });
+    for (const n of PR.myNotes()) if (n.quote) {
+      const attrs = { class: "hl c-" + (n.color || "yellow") + (n.style === "underline" ? " s-ul" : "") + (n.kind === "question" ? " q" : ""), "data-note": n.id };
+      for (const segment of n.segments || [n]) items.push({ n:Object.assign({}, segment, {id:n.id}), attrs });
+    }
     for (const e of S.discussion.entries || []) if (e.quote && e.anchor) items.push({ n: e, attrs: { class: "hl agent", "data-card": e.id } });
+    const missing = new Set(), examined = new Set();
     for (const { n, attrs } of items) {
       if (onlyBlock && n.anchor !== onlyBlock) continue;
       const zh = zhFor(n);
       const i = zh ? findQuote(fullText(zh), n.quote, n.prefix, n.suffix) : -1;
-      if (i < 0) { lost.add(n.id); continue; }
-      lost.delete(n.id);
+      examined.add(n.id);
+      if (i < 0) { missing.add(n.id); continue; }
       wrap(zh, i, i + n.quote.length, attrs);
     }
+    examined.forEach(id => { if (missing.has(id)) lost.add(id); else lost.delete(id); });
   };
 
   /* ---------- 选中文字 -> 浮动条 ---------- */
@@ -93,16 +99,22 @@
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
     const range = sel.getRangeAt(0);
-    const startEl = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
-    const zh = startEl && startEl.closest("#paper .zh");
-    if (!zh || !zh.contains(range.endContainer) || zh.querySelector("textarea")) return null;
-    const text = fullText(zh);
-    const s = offsetOf(zh, range.startContainer, range.startOffset);
-    const e = offsetOf(zh, range.endContainer, range.endOffset);
-    const quote = text.slice(s, e);
-    if (!quote.trim()) return null;
-    return { anchor: zh.closest(".blk").dataset.id, key: zh.dataset.key, quote, prefix: text.slice(Math.max(0, s - 32), s), suffix: text.slice(e, e + 32), rect: range.getBoundingClientRect() };
+    const paper = PR.$('#paper');
+    if (!paper.contains(range.startContainer) || !paper.contains(range.endContainer)) return null;
+    const segments = [];
+    for (const root of PR.$$('#paper .zh, #paper .en')) {
+      if (!range.intersectsNode(root) || !root.getClientRects().length || root.querySelector('textarea')) continue;
+      const text = fullText(root), s = offsetOf(root, range.startContainer, range.startOffset), e = offsetOf(root, range.endContainer, range.endOffset);
+      const quote = text.slice(s,e), host = root.closest('.blk');
+      if (!quote.trim() || !host) continue;
+      segments.push({anchor:host.dataset.id, key:root.dataset.key, lang:root.classList.contains('en') ? 'en' : 'zh',
+        root_index:Array.from(host.querySelectorAll(root.classList.contains('en') ? '.en' : '.zh')).indexOf(root),
+        quote, prefix:text.slice(Math.max(0,s-32),s), suffix:text.slice(e,e+32)});
+    }
+    if (!segments.length) return null;
+    return Object.assign({},segments[0],{quote:segments.map(s => s.quote).join('\n'),segments,rect:range.getBoundingClientRect()});
   }
+  PR.captureSelection = () => { const next = readSelection(); if (next) pendingSel = next; return next; };
   PR.hasPendingSelection = () => !!pendingSel && selbar().classList.contains("open");
 
   function showSelbar() {
@@ -126,26 +138,27 @@
     const y = r.top - 48 < 58 ? r.bottom + 8 : r.top - 48;
     bar.style.left = x + "px"; bar.style.top = y + "px";
   }
-  document.addEventListener("mouseup", (e) => { if (!(e.target.closest && e.target.closest("#selbar, #blockbar"))) setTimeout(showSelbar, 10); });
+  document.addEventListener("mouseup", (e) => { if (!(e.target.closest && e.target.closest("#selbar, #blockbar, #readingTools"))) setTimeout(showSelbar, 10); });
   document.addEventListener("keyup", (e) => { if (e.shiftKey && e.key.startsWith("Arrow")) showSelbar(); });
-  document.addEventListener("selectionchange", PR.debounce(() => { const s = getSelection(); if (!s || s.isCollapsed) selbar().classList.remove("open"); }, 120));
+  document.addEventListener("selectionchange", PR.debounce(() => { const s = getSelection(); if (!s || s.isCollapsed) selbar().classList.remove("open"); else showSelbar(); }, 120));
 
   PR.selectionAction = function (kind, color) {
     if (!pendingSel) return;
-    const { anchor, key, quote, prefix, suffix } = pendingSel;
+    const { anchor, key, quote, prefix, suffix, segments, lang, root_index } = pendingSel;
     selbar().classList.remove("open");
     getSelection().removeAllRanges();
     pendingSel = null;
     if (kind === "en") { PR.toggleEn(anchor, true); return; }
-    if (kind === "copy") { navigator.clipboard.writeText(quote).then(() => PR.toast("已复制")); return; }
+    if (kind === "copy") { PR.copyText(quote); return; }
     if (kind === "chat") { PR.chatAsk({ anchor, quote }); return; }
-    const note = { anchor, key, quote, prefix, suffix, kind, color: color || "yellow" };
+    const note = { anchor, key, quote, prefix, suffix, segments, lang, root_index, kind, color: color || "yellow" };
     if (PR.prefs.pen === "underline") note.style = "underline";
     if (kind === "highlight") {
       Object.assign(note, { id: PR.uid("n"), body: "", created: PR.nowIso() });
       PR.saveNote(note);
-      PR.applyMarks(anchor);
-      PR.toast("已划线　点划线可以写笔记或改颜色", { label: "撤销", fn: () => { PR.commit({ op: "note_del", id: note.id }); PR.applyMarks(anchor); } }, 2600);
+      if (PR.trackAnnotation) PR.trackAnnotation(note);
+      PR.applyMarks();
+      PR.toast("已标注　点标注可写注记或改颜色", { label: "撤销", fn: () => PR.undoAnnotation(note.id) }, 2600);
     } else PR.startNote(note);
   };
   selbar().addEventListener("mousedown", (e) => e.preventDefault()); // 点按钮时别丢掉选区
@@ -175,12 +188,12 @@
       '<div style="display:flex;gap:6px"><button class="btn sm line" data-hl="note">写笔记</button><button class="btn sm line" data-hl="question">提问</button><button class="btn sm danger" data-hl="del">删除划线</button></div>', { sticky: true });
     PR.$("#popover").onclick = (ev) => {
       const c = ev.target.closest("[data-hl-color]"), b = ev.target.closest("[data-hl]");
-      if (c) { PR.saveNote(Object.assign({}, n, { color: c.dataset.hlColor })); PR.applyMarks(n.anchor); PR.hidePopover(); return; }
+      if (c) { PR.saveNote(Object.assign({}, n, { color: c.dataset.hlColor })); PR.applyMarks(); PR.hidePopover(); return; }
       const sty = ev.target.closest("[data-hl-style]");
-      if (sty) { const x = Object.assign({}, n); if (sty.dataset.hlStyle === "underline") x.style = "underline"; else delete x.style; PR.saveNote(x); PR.applyMarks(n.anchor); PR.hidePopover(); return; }
+      if (sty) { const x = Object.assign({}, n); if (sty.dataset.hlStyle === "underline") x.style = "underline"; else delete x.style; PR.saveNote(x); PR.applyMarks(); PR.hidePopover(); return; }
       if (!b) return;
       PR.hidePopover();
-      if (b.dataset.hl === "del") { PR.commit({ op: "note_del", id: n.id }); PR.applyMarks(n.anchor); }
+      if (b.dataset.hl === "del") { PR.commit({ op: "note_del", id: n.id }); PR.applyMarks(); }
       else { PR.saveNote(Object.assign({}, n, { kind: b.dataset.hl })); PR.openNoteEditor(n.id); }
     };
   }, true);

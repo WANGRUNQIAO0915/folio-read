@@ -172,6 +172,139 @@ def start_window(home: Path, window, callback=None):
                                 'windows.fileFilter.allFiles': '所有文件'})
 
 
+def check_reading_tools(window, home: Path, paper_id: str, checks: dict, wait_for_ui):
+    """Use an isolated article to verify selection, annotations and the OS clipboard."""
+    window.evaluate_js('''(() => {
+        window.__readingTestSelect = (start, end = start) => {
+            const a = document.querySelector(start), b = document.querySelector(end);
+            const r = document.createRange(); r.setStart(a, 0); r.setEnd(b, b.childNodes.length);
+            const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+            return s.toString();
+        };
+        window.__readingTestKey = (key, modifiers = {}, target = document.body) => {
+            const e = new KeyboardEvent('keydown', Object.assign({key, bubbles:true, cancelable:true}, modifiers));
+            target.dispatchEvent(e); return e.defaultPrevented;
+        };
+    })()''')
+    checks['visible_reading_toolbar'] = window.evaluate_js('''
+        document.querySelectorAll('#readingTools [data-read-tool]').length === 7 &&
+        document.querySelectorAll('#readingTools [data-read-color]').length === 4 &&
+        getComputedStyle(document.querySelector('#b-p1-link .zh')).userSelect === 'text'
+    ''')
+    checks['ctrl_f_opens_page_search'] = window.evaluate_js('''
+        __readingTestKey('f', {ctrlKey:true}) && !document.querySelector('#pageFind').hidden &&
+        document.activeElement.getAttribute('aria-label') === '查找文字'
+    ''')
+    window.evaluate_js('''(() => {
+        const input = document.querySelector('#pageFind input'); input.value = '资料';
+        input.dispatchEvent(new Event('input', {bubbles:true}));
+    })()''')
+    checks['page_search_counts_and_marks'] = wait_for_ui("document.querySelector('#pageFind output').textContent === '1 / 2' && CSS.highlights.get('folio-find').size === 2")
+    checks['page_search_next_and_previous'] = window.evaluate_js('''(() => {
+        const input = document.querySelector('#pageFind input');
+        __readingTestKey('Enter', {}, input);
+        const next = document.querySelector('#pageFind output').textContent === '2 / 2';
+        __readingTestKey('Enter', {shiftKey:true}, input);
+        return next && document.querySelector('#pageFind output').textContent === '1 / 2';
+    })()''')
+    window.evaluate_js('''(() => {
+        const input = document.querySelector('#pageFind input'); input.value = '[not found]';
+        input.dispatchEvent(new Event('input', {bubbles:true}));
+    })()''')
+    checks['page_search_literal_and_empty_results'] = wait_for_ui("document.querySelector('#pageFind output').textContent === '0 / 0' && document.querySelector('[data-find=next]').disabled")
+    checks['escape_closes_page_search'] = window.evaluate_js('''
+        __readingTestKey('Escape', {}, document.querySelector('#pageFind input')) &&
+        document.querySelector('#pageFind').hidden && !CSS.highlights.has('folio-find')
+    ''')
+    checks['double_click_does_not_edit_translation'] = window.evaluate_js('''(() => {
+        document.querySelector('#b-p1-link .zh').dispatchEvent(new MouseEvent('dblclick', {bubbles:true}));
+        return !PR.editingKey && !document.querySelector('#paper .editor-wrap');
+    })()''')
+    checks['cross_paragraph_highlight_preserves_links'] = window.evaluate_js('''(() => {
+        __readingTestSelect('#b-p1-link .zh', '#b-p1-url .zh');
+        document.querySelector('[data-read-tool=marker]').click();
+        const n = PR.myNotes().at(-1); window.__readingTestCross = n.id;
+        return n.segments.length === 2 && n.segments[0].quote === '查看补充材料' &&
+            !!document.querySelector('#b-p1-link .zh mark.hl') && !!document.querySelector('#b-p1-url .zh mark.hl') &&
+            document.querySelector('#b-p1-link .zh a').href === 'https://example.org/supplement';
+    })()''')
+    checks['english_underline_shortcut'] = window.evaluate_js('''(() => {
+        PR.setPref('mode', 'bi', true); __readingTestSelect('#b-p1-link .en');
+        __readingTestKey('u', {ctrlKey:true, shiftKey:true});
+        const n = PR.myNotes().at(-1);
+        return n.lang === 'en' && n.quote === 'View supplementary material' &&
+            n.style === 'underline' && !!document.querySelector('#b-p1-link .en mark.s-ul');
+    })()''')
+    checks['ctrl_z_undoes_only_new_annotation'] = window.evaluate_js('''
+        __readingTestKey('z', {ctrlKey:true}) && !document.querySelector('#b-p1-link .en mark.hl') &&
+        !!document.querySelector('#b-p1-link .zh mark.hl') && PR.myNotes().length === 1
+    ''')
+    checks['note_shortcut_preserves_selection'] = window.evaluate_js('''(() => {
+        __readingTestSelect('#b-p1-url .zh'); __readingTestKey('n', {ctrlKey:true, shiftKey:true});
+        const n = PR.myNotes().at(-1), ta = document.querySelector('#notespanel .card textarea');
+        window.__readingTestNote = n.id;
+        if (ta) { ta.value = '阅读工具持久化验证'; ta.dispatchEvent(new Event('input', {bubbles:true}));
+            __readingTestKey('Enter', {ctrlKey:true}, ta); }
+        return n.segments.length === 1 && n.anchor === 'p1-url' && !!ta;
+    })()''')
+    checks['annotation_saved_to_disk'] = wait_for_ui("PR.store.status === 'saved' && !PR.store.pending")
+    reader = json.loads((home / 'library' / paper_id / 'reader.json').read_text(encoding='utf-8'))
+    checks['cross_paragraph_segments_persisted'] = any(len(n.get('segments', [])) == 2 and not n.get('deleted') for n in reader['notes'].values())
+    checks['note_body_persisted'] = any(n.get('body') == '阅读工具持久化验证' for n in reader['notes'].values())
+    window.evaluate_js('''(() => {
+        PR.toggleNotesPanel(false); __readingTestSelect('#b-p1-link .zh');
+    })()''')
+    # Keep every original clipboard format in memory, never in a log or report.
+    from System import Action
+    from System.Windows.Forms import Clipboard, DataObject, TextBox
+    saved = []
+    def snapshot_clipboard():
+        original = Clipboard.GetDataObject()
+        if original is None:
+            saved.append(None)
+            return
+        clone = DataObject()
+        for name in original.GetFormats(False):
+            clone.SetData(name, False, original.GetData(name, False))
+        saved.append(clone)
+    window.native.Invoke(Action(snapshot_clipboard))
+    try:
+        checks['ctrl_c_remains_native'] = window.evaluate_js("!__readingTestKey('c', {ctrlKey:true}) && getSelection().toString() === '查看补充材料'")
+        window.evaluate_js("PR.copyText(getSelection().toString()).then(ok => { document.body.dataset.clipboardCheck = String(ok); })")
+        checks['copy_action_completes'] = wait_for_ui("document.body.dataset.clipboardCheck === 'true'")
+        pasted = []
+        def paste_in_windows_textbox():
+            textbox = TextBox()
+            try:
+                textbox.CreateControl()
+                textbox.Paste()
+                pasted.append(textbox.Text == '查看补充材料')
+            finally:
+                textbox.Dispose()
+        window.native.Invoke(Action(paste_in_windows_textbox))
+        checks['copy_pastes_into_windows_textbox'] = bool(pasted and pasted[0])
+    finally:
+        def restore_clipboard():
+            if saved[0] is None:
+                Clipboard.Clear()
+            else:
+                Clipboard.SetDataObject(saved[0], True)
+        window.native.Invoke(Action(restore_clipboard))
+    checks['visible_shortcut_guide'] = window.evaluate_js('''(() => {
+        document.querySelector('[data-read-tool=shortcuts]').click();
+        const dlg = document.querySelector('.reading-shortcuts');
+        const opened = dlg.open && dlg.textContent.includes('Ctrl+F'); dlg.close(); return opened;
+    })()''')
+    window.load_url(window.original_url)
+    checks['annotations_restored_after_reopen'] = wait_for_ui('''
+        !!document.querySelector('#b-p1-link .zh mark.hl') && !!document.querySelector('#b-p1-url .zh mark.hl') &&
+        PR.myNotes().some(n => n.body === '阅读工具持久化验证')
+    ''', 15)
+    window.resize(780, 600)
+    checks['toolbar_accessible_in_small_window'] = wait_for_ui("document.querySelector('#readingTools').clientWidth <= innerWidth && document.querySelector('#readingTools [data-read-tool=shortcuts]').getBoundingClientRect().width > 0")
+    window.resize(1280, 880)
+
+
 def check_window(home: Path, url: str, paper_id: str, checks: dict):
     """Exercise the actual WebView2 window in source and frozen builds."""
     window = create_window(home, url + '/read/' + paper_id, 'Folio Read · 桌面验证')
@@ -229,6 +362,7 @@ def check_window(home: Path, url: str, paper_id: str, checks: dict):
             })()''')
             checks['gui_persistent_profile'] = (home / 'desktop-cache').is_dir()
             checks['gui_exports_enabled'] = __import__('webview').settings['ALLOW_DOWNLOADS']
+            check_reading_tools(window, home, paper_id, checks, wait_for_ui)
             deadline = time.monotonic() + 15
             while time.monotonic() < deadline:
                 ready = window.evaluate_js("!!document.querySelector('#questionScope option[value=library]') && !document.querySelector('#questionScopeControls').hidden")
@@ -286,6 +420,9 @@ def check_window(home: Path, url: str, paper_id: str, checks: dict):
                     time.sleep(.2)
                 checks['saved_answer_restored_in_gui'] = bool(answer_ready)
                 if answer_ready:
+                    window.evaluate_js("document.body.dispatchEvent(new KeyboardEvent('keydown', {key:'f',ctrlKey:true,bubbles:true,cancelable:true})); const q = document.querySelector('#pageFind input'); q.value = '隔离数据'; q.dispatchEvent(new Event('input',{bubbles:true}));")
+                    checks['ctrl_f_searches_saved_knowledge_answer'] = wait_for_ui("document.querySelector('#pageFind output').textContent === '1 / 1'")
+                    window.evaluate_js('PR.closeFind()')
                     window.evaluate_js("document.querySelector('[data-focus-followup]').click()")
                     checks['followup_shortcut_focuses_composer'] = wait_for_ui("document.activeElement.id === 'followupQuestion'")
                     checks['question_visible_and_evidence_collapsed'] = window.evaluate_js('''(() => {
@@ -469,7 +606,9 @@ def smoke_test(report: Path):
                                                      {'id': 'p1-link', 'type': 'para', 'page': 1,
                                                       'en': 'View supplementary material', 'zh': '查看补充材料'},
                                                      {'id': 'p1-url', 'type': 'para', 'page': 1,
-                                                      'en': 'Website', 'zh': '资料网站：https://example.org/data?a=1&b=2'}],
+                                                      'en': 'Website', 'zh': '资料网站：https://example.org/data?a=1&b=2'},
+                                                     {'id': 'p1-more', 'type': 'para', 'page': 1,
+                                                      'en': 'Another passage for search verification.', 'zh': '第二条资料用于查找验证。'}],
                                               translation={'done_pages': [1]}))
         pdfwork.locate(ws.root)
         checks['automatic_figure_crop'] = figures.ensure(ws) == 1 and bool(ws.load('paper')['blocks'][0].get('src'))

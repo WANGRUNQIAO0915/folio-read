@@ -90,7 +90,7 @@
   function copyBlock(id, lang) {
     const b = PR.blockById[id];
     const t = lang === "en" ? (b.en || b.caption_en || (b.items || []).map((i) => i.en).join("\n")) : PR.blockKeys(b).map(PR.textFor).join("\n");
-    navigator.clipboard.writeText(PR.plain(t || (b.tex ? "$$" + b.tex + "$$" : ""))).then(() => PR.toast("已复制"));
+    PR.copyText(PR.plain(t || (b.tex ? "$$" + b.tex + "$$" : "")));
   }
 
   /* 点击段落 = 设为当前段并出操作条；再点一次收起 */
@@ -187,7 +187,8 @@
   /* 所有跳转都用这个：目标放在屏幕正中（比一屏还高的才顶到上面），不被顶栏挡住 */
   PR.centerOn = function (el, instant) {
     const r = el.getBoundingClientRect(), header = PR.$("#bar");
-    const bar = header ? header.getBoundingClientRect().bottom : 0;
+    const tools = PR.$('#readingTools');
+    const bar = Math.max(header ? header.getBoundingClientRect().bottom : 0, tools ? tools.getBoundingClientRect().bottom : 0);
     const room = innerHeight - bar;
     const top = r.height > room * 0.85 ? r.top - bar - 16 : r.top - bar - (room - r.height) / 2;
     window.scrollTo({ top: scrollY + top, behavior: instant ? "auto" : "smooth" });

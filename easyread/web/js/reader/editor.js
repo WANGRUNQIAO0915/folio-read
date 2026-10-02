@@ -1,4 +1,4 @@
-/* 改译文：双击一段或按 E，原地变成编辑框。草稿随手存在浏览器里，误关页面也能找回。 */
+/* 改译文：使用段落工具或 E；保留双击选词的标准阅读行为。 */
 (function (PR) {
   "use strict";
   PR.editingKey = null;
@@ -47,14 +47,6 @@
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); finish("save"); }
     });
   };
-
-  document.addEventListener("dblclick", (e) => {
-    const zh = e.target.closest("#paper .zh[data-key]");
-    if (!zh || e.target.closest("a, button, textarea") || zh.closest(".blk-references")) return;
-    getSelection().removeAllRanges();
-    PR.$("#selbar").classList.remove("open");
-    PR.editZh(zh);
-  });
 
   /* 我改过、译者稿后来又变了 */
   PR.showStale = function (zh) {

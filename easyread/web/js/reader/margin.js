@@ -134,6 +134,7 @@
   PR.startNote = function (opts) {
     const note = Object.assign({ id: PR.uid("n"), kind: "note", body: "", created: PR.nowIso() }, opts);
     PR.saveNote(note);
+    if (PR.trackAnnotation) PR.trackAnnotation(note);
     if (PR.notesPanelOpen && PR.notesPanelOpen()) PR.renderNotesPanel(note.id);
     else PR.openNoteEditor(note.id);
     return note;

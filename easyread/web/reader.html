@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="/web/css/settings.css">
 <link rel="stylesheet" href="/web/css/study.css">
 <link rel="stylesheet" href="/web/css/workspace.css">
+<link rel="stylesheet" href="/web/css/reading-tools.css">
 <script>try{var p=JSON.parse((localStorage.getItem("easyread-prefs")||localStorage.getItem("coread-prefs"))||"{}");var d=p.theme==="dark"||(p.theme!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.dataset.theme=d?"dark":"light"}catch(e){}</script>
 </head>
 <body class="reader-page">
@@ -39,6 +40,8 @@
   <button class="btn" data-act="settings" title="字号、版心、主题（=、- 调字号）">Aa</button>
   <button class="save-state" data-act="about" title="保存状态"><i></i><span>…</span></button>
 </header>
+
+<div id="readingTools" class="reading-tools" role="toolbar" aria-label="常用阅读工具"></div>
 
 <aside id="drawer" aria-label="目录">
   <div class="drawer-tabs" role="tablist">
@@ -118,6 +121,8 @@
 <script src="/web/js/common/study-ui.js"></script>
 <script src="/web/js/study.js"></script>
 <script src="/web/js/reader/study-entry.js"></script>
+<script src="/web/js/common/find.js"></script>
+<script src="/web/js/reader/tools.js"></script>
 <script src="/web/js/reader/main.js"></script>
 </body>
 </html>
