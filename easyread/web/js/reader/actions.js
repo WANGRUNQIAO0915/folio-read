@@ -161,6 +161,7 @@
   document.addEventListener("mouseover", (e) => {
     const a = e.target.closest && e.target.closest("a.cite, a.xref");
     if (!a) return;
+    if(a.classList.contains('cite') && PR.side==='refs')return;
     clearTimeout(hoverT);
     hoverT = setTimeout(() => PR.popover(a, refCard(a)), 180);
   });
@@ -169,8 +170,10 @@
     const a = e.target.closest("a.cite, a.xref");
     if (!a) return;
     e.preventDefault();
+    clearTimeout(hoverT);
     PR.hidePopover();
-    PR.jumpTo(a.classList.contains("cite") ? "ref-" + a.dataset.ref : "b-" + PR.xindex[a.dataset.kind][a.dataset.key]);
+    if(a.classList.contains("cite"))PR.openReferences(a);
+    else PR.jumpTo("b-"+PR.xindex[a.dataset.kind][a.dataset.key]);
   });
   function refCard(a) {
     if (a.classList.contains("cite")) {

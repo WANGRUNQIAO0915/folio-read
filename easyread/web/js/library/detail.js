@@ -89,7 +89,7 @@
       '<span>出处</span><span contenteditable="plaintext-only" data-meta="venue">' + PR.esc(i.venue || i.arxiv) + "</span>" +
       '<span>链接</span><span contenteditable="plaintext-only" data-meta="url">' + PR.esc(i.url) + "</span>" +
       "<span>添加</span><span>" + PR.esc(PR.relTime(i.added)) + (i.last_opened ? "　·　上次打开 " + PR.esc(PR.relTime(i.last_opened)) : "") + "</span></div>" +
-      "<h4>翻译</h4>" + jobHtml(i) +
+      window.FolioJournal.panel(i,i.id,true) + "<h4>翻译</h4>" + jobHtml(i) +
       (i.notes + i.highlights + i.open_questions ? '<p class="mine-line">' + [i.notes && i.notes + " 条笔记", i.highlights && i.highlights + " 处划线", i.open_questions && i.open_questions + " 个问题待回答"].filter(Boolean).join(" · ") + "</p>" : "") +
       (i.abstract ? '<h4>摘要</h4><div class="abstract" id="abs">' + PR.esc(i.abstract.replace(/\$([^$]+)\$/g, "$1")) + '</div><button class="linkish" data-d="abs">展开全文</button>' : "") +
       "</div>";

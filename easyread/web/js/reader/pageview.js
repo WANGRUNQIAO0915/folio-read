@@ -13,6 +13,7 @@
   let sideT = null;
   PR.openSide = function (name) {
     PR.side = name;
+    body.classList.toggle("refs-open", name === "refs");
     body.classList.toggle("study-open", name === "study");
     const companion=PR.$("#companion");if(companion)companion.inert=!name;
     if(PR.syncCompanion)PR.syncCompanion(name);

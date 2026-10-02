@@ -57,6 +57,8 @@
       if (safeKey(key) && typeof value === 'string' && /^data:image\/(?:png|jpeg|webp|gif);base64,[a-zA-Z0-9+/=\s]+$/.test(value)) images[key] = value;
     }
     const meta=pick(input.paper.meta,'meta');
+    const journal=root.FolioJournal || (typeof require==='function'?require('../js/common/journal-rank.js'):null);
+    const rank=journal?.clean(input.paper.meta.journal_rank);if(rank)meta.journal_rank=rank;
     if(Array.isArray(meta.pages)) meta.pages=meta.pages.map(p=>({n:p.n,img:p.img}));
     const blocks=input.paper.blocks.map(b=>{const out=pick(b,'block');
       if(Array.isArray(out.items)) out.items=out.items.map(i=>({zh:i.zh || '',en:i.en || ''}));

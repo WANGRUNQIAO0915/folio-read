@@ -86,7 +86,11 @@ def normalize(data):
     ids = [b.get('id') for b in paper['blocks']]
     if any(not safe_key(i) for i in ids) or len(ids) != len(set(ids)):
         raise ValueError('论文段落标识无效或重复')
+    from .scholar import clean_rank
     meta = pick(paper['meta'], 'meta')
+    rank = clean_rank(paper['meta'].get('journal_rank'))
+    if rank:
+        meta['journal_rank'] = rank
     if 'pages' in meta:
         meta['pages'] = [{k: p[k] for k in ('n', 'img') if k in p} for p in meta['pages']]
     blocks = []

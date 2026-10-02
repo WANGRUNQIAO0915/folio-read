@@ -61,7 +61,7 @@
 
 <aside id="companion" class="side-panel" aria-label="阅读陪读栏" inert>
 <div class="companion-head"><b>陪读</b><span class="grow"></span><button class="btn icon" data-companion-close title="收起陪读栏" aria-label="收起陪读栏">×</button></div>
-<nav class="companion-tabs" aria-label="陪读工具"><button data-companion="question" class="server-only">提问</button><button data-companion="overview" class="server-only">概览</button><button data-companion="visual" class="server-only">图表</button><button data-companion="notes">笔记</button></nav>
+<nav class="companion-tabs" aria-label="陪读工具"><button data-companion="question" class="server-only">提问</button><button data-companion="overview" class="server-only">概览</button><button data-companion="visual" class="server-only">图表</button><button data-companion="notes">笔记</button><button data-companion="refs">引用</button></nav>
 <section id="studypanel" class="study-root"></section>
 <section id="pageview" class="side-panel" aria-label="原文页">
   <div class="pv-head">
@@ -77,6 +77,7 @@
   <div class="pv-scroll"><div class="pv-page"><img alt=""><div class="pv-hl"></div></div></div>
 </section>
 
+<section id="refpanel" class="side-panel" aria-label="参考文献预览"></section>
 <section id="notespanel" class="side-panel" aria-label="笔记"></section>
 <section id="chatpanel" class="side-panel" aria-label="问 AI"></section>
 <div class="companion-links"><button data-companion="pages">原文页</button><button data-companion="chat">选段提问</button><a class="server-only" id="companionResearch" href="/study">研究主题 →</a></div>
@@ -96,7 +97,9 @@
 <script src="/web/js/common/util.js"></script>
 <script src="/web/js/common/confirm.js"></script>
 <script src="/web/js/common/features.js"></script>
+<script src="/web/js/common/citations.js"></script>
 <script src="/web/js/common/markup.js"></script>
+<script src="/web/js/common/journal-rank.js"></script>
 <script src="/web/js/reader/store.js"></script>
 <script src="/web/js/reader/render.js"></script>
 <script src="/web/js/reader/margin.js"></script>
@@ -105,6 +108,7 @@
 <script src="/web/js/reader/editor.js"></script>
 <script src="/web/js/reader/panels.js"></script>
 <script src="/web/js/reader/pageview.js"></script>
+<script src="/web/js/reader/references.js"></script>
 <script src="/web/js/reader/figures.js"></script>
 <script src="/web/js/reader/notespanel.js"></script>
 <script src="/web/js/reader/chat.js"></script>
@@ -115,6 +119,7 @@
 <script src="/web/js/common/settings-models.js"></script>
 <script src="/web/js/common/settings.js"></script>
 <script src="/web/js/common/settings-tabs.js"></script>
+<script src="/web/js/common/settings-scholar.js"></script>
 <script src="/web/js/common/settings-cloud.js"></script>
 <script src="/web/js/common/settings-chat.js"></script>
 <script src="/web/js/common/personal.js"></script>

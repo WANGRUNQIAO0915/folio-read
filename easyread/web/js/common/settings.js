@@ -4,7 +4,7 @@
 (function (PR) {
   "use strict";
   const dlg = () => PR.$("#settingsDlg");
-  const ALL_TABS = [["engine", "翻译"], ["chat", "问 AI"], ["personal", "自用"], ["reading", "阅读"], ["cloud", "云同步"], ["library", "侧边栏"], ["keys", "快捷键"]];
+  const ALL_TABS = [["engine", "翻译"], ["chat", "问 AI"], ["personal", "自用"], ["reading", "阅读"], ["cloud", "云同步"], ["scholar", "期刊分区"], ["library", "侧边栏"], ["keys", "快捷键"]];
   const tabs = () => ALL_TABS.filter(([k]) => PR.settingsTabs[k]);  // “侧边栏”页只在文献库页面有
   PR.settingsTabs = PR.settingsTabs || {};
   const st = (PR.settingsState = { tab: "engine", cfg: null, presets: [], groups: [], found: null, chat: null, ui: null });
@@ -14,7 +14,7 @@
   PR.openSettings = async function (tab) {
     const [d, chat, personal] = await Promise.all([PR.api("/api/config"), PR.api("/api/chat/models").catch(() => null), PR.api("/api/personal")]);
     Object.assign(st, { tab: typeof tab === "string" ? tab : "engine", cfg: d.config, presets: d.presets, groups: d.groups || [], chat,
-      apiKind: null, ui: { features: Object.assign({}, PR.features), keys_on: PR.keysOn, keys: Object.assign({}, PR.keymap) },
+      scholar:null, scholarDraft:null, apiKind: null, ui: { features: Object.assign({}, PR.features), keys_on: PR.keysOn, keys: Object.assign({}, PR.keymap) },
       theme: PR.ls.get("easyread-prefs", {}).theme || "auto", recording: null, editing: null, form: null, chatKeys: null,
       personal: personal.preferences, profiles: personal.profiles });
     render();
@@ -41,6 +41,7 @@
 
   async function save() {
     sync();
+    if(PR.settingsTabs.scholar)await PR.settingsTabs.scholar.save(st);
     await PR.api("/api/personal", { method: "POST", body: st.personal });
     const r = await PR.api("/api/config", { method: "POST", body: PR.settingsTabs.engine.collect(st) });
     st.cfg = r.config;

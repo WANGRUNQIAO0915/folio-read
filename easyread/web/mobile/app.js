@@ -3,6 +3,7 @@
   const C=window.FolioMobile,S=window.FolioStorage,D=window.FolioDrive,$=s=>document.querySelector(s),E=C.esc;
   let view='library',papers=[],active=null,cloudFiles=[],selection=null,settings={},scrollTimer=0,toastTimer=0;
   const title=data=>(data.item.meta_override || {}).title_zh || data.paper.meta.title_zh || data.paper.meta.title_en || '未命名论文';
+  const effectiveMeta=data=>({...data.paper.meta,...data.item.meta_override});
   const notes=data=>Object.values(data.reader.notes || {}).filter(n=>!n.deleted || (n._syncConflicts || []).some(c=>!c.deleted));
   const percent=data=>Math.round(100*(Number((data.reader.progress || {}).ratio)||0));
   function toast(text) {$('#toast').textContent=text;$('#toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>{$('#toast').hidden=true;},4500);}
@@ -15,6 +16,7 @@
   }
   function setView(next) {
     view=next;selection=null;$('#selectionTools').hidden=true;
+    if(next!=='reader'){PR.citationReferences=[];PR.refById={};}
     document.body.classList.toggle('reader-mode',view==='reader');
     $('#tabs').innerHTML=view==='reader' ? '<button data-act="toc">目录</button><button data-act="paperNotes">笔记</button><button data-act="find">查找</button>' :
       ['library','notes','settings'].map((v,i)=>'<button data-view="'+v+'" class="'+(v===view?'active':'')+'">'+['阅读','笔记','设置'][i]+'</button>').join('');
@@ -39,7 +41,7 @@
     }).join('');
     $('#app').innerHTML=html;
   }
-  function cards(list) {return list.map(data=>'<button class="paper-card" data-open="'+E(data.paper_id)+'"><h3>'+E(title(data))+'</h3><div class="meta"><span>'+E(data.paper.meta.authors || '')+'</span><span>'+percent(data)+'% · '+notes(data).length+' 条批注</span></div></button>').join('');}
+  function cards(list) {return list.map(data=>'<button class="paper-card" data-open="'+E(data.paper_id)+'"><h3>'+E(title(data))+'</h3><div class="meta"><span>'+E(data.paper.meta.authors || '')+'</span><span>'+percent(data)+'% · '+notes(data).length+' 条批注</span></div>'+window.FolioJournal.badges(effectiveMeta(data))+'</button>').join('');}
   async function openPaper(id,block) {
     active=await S.update(id,data=>{data.opened_at=new Date().toISOString();});
     setView('reader');
@@ -66,14 +68,17 @@
         (block.rows || []).map(row=>'<tr>'+row.map(x=>'<td>'+md(x,block)+'</td>').join('')+'</tr>').join('');
       return '<div class="table-scroll"><table>'+rows+'</table></div><div class="caption">'+textRoot(block.caption_zh || '',block.id+'#caption','zh',block)+en(block.caption_en,block.id+'#caption')+'</div>';
     }
-    if(block.type==='references') return '<ul class="refs">'+(active.paper.references || []).map(ref=>'<li>['+E(ref.id)+'] '+md(ref.text)+'</li>').join('')+'</ul>';
+    if(block.type==='references') return '<ul class="refs">'+(active.paper.references || []).map(ref=>'<li id="ref-'+E(ref.id)+'">['+E(ref.id)+'] '+md(ref.text)+'</li>').join('')+'</ul>';
     return textRoot(zh || block.en || '',block.id,'zh',block);
   }
   function renderPaper() {
-    const meta=active.paper.meta;
+    const meta=effectiveMeta(active);
+    PR.citationReferences=active.paper.references || [];PR.refById=Object.fromEntries(PR.citationReferences.map(r=>[String(r.id),r]));
     $('#app').innerHTML='<div class="reader-actions"><button data-act="library">← 文献库</button><button data-act="bilingual">'+(settings.bilingual?'仅中文':'原文对照')+'</button><button data-act="original">原页</button><button data-act="type">Aa</button></div>'+
       '<h1 class="reader-title">'+E(title(active))+'</h1><p class="reader-meta">'+E(meta.authors || '')+' · '+E(meta.page_count || (meta.pages || []).length || '?')+' 页'+(active.demo?' · 简短界面示例，非完整译文':'')+'</p>'+
+      window.FolioJournal.badges(meta)+(window.FolioJournal.visible(meta)?'<details class="journal-panel"><summary>期刊分区与来源</summary>'+window.FolioJournal.details(meta)+'</details>':'')+
       '<article id="paper" class="reader-paper">'+active.paper.blocks.map(b=>'<section class="blk" id="b-'+E(b.id)+'" data-block="'+E(b.id)+'">'+(b.page?'<div class="pg">p.'+E(b.page)+'</div>':'')+content(b)+'</section>').join('')+'</article>';
+    if(!(active.paper.blocks||[]).some(b=>b.type==='references') && (active.paper.references||[]).length){const block={id:'folio-references',type:'references'};$('#paper').insertAdjacentHTML('beforeend','<section class="blk" id="b-folio-references">'+content(block)+'</section>');}
     applyMarks();
   }
   function textNodes(root) {
@@ -203,6 +208,15 @@
   }
   document.addEventListener('click',async e=>{
     try {
+      const cite=e.target.closest('a.cite');if(cite){
+        e.preventDefault();const ids=(cite.dataset.refs||cite.dataset.ref||'').split('|'),refs=ids.map(id=>PR.refById[id]).filter(Boolean);
+        sheet('参考文献 '+cite.textContent,(cite.dataset.citeAmbiguous?'<p class="muted small">同作者同年份有多个候选，请核对条目。</p>':'')+refs.map(r=>{
+          const doi=PR.safeLink(r.doi)||PR.safeLink((String(r.text||'').match(/\b10\.\d{4,9}\/[^\s<>]+/)||[])[0]?.replace(/[.,;)]+$/,'')),url=PR.safeLink(r.url);
+          return '<section class="reference-entry"><span class="reference-number">['+E(r.id)+']</span><p>'+PR.md(r.text,{cite:false,xref:false})+'</p><div class="actions"><button data-ref-jump="'+E(r.id)+'">跳到文末</button><button data-ref-copy="'+E(r.id)+'">复制条目</button>'+(doi?PR.externalLink('打开 DOI ↗',doi):'')+(url&&url!==doi?PR.externalLink('查看原文 ↗',url):'')+'</div></section>';
+        }).join(''));return;
+      }
+      const refJump=e.target.closest('[data-ref-jump]');if(refJump){const el=document.getElementById('ref-'+refJump.dataset.refJump);closeSheet();if(el)el.scrollIntoView({block:'center'});else toast('文末参考文献列表尚未生成');return;}
+      const refCopy=e.target.closest('[data-ref-copy]');if(refCopy){try{await navigator.clipboard.writeText(PR.refById[refCopy.dataset.refCopy].text);toast('参考文献已复制');}catch(_){toast('请长按条目文字复制');}return;}
       const viewButton=e.target.closest('[data-view]');if(viewButton) {papers=await S.all();return setView(viewButton.dataset.view);}
       const open=e.target.closest('[data-open]');if(open) return openPaper(open.dataset.open);
       const remote=e.target.closest('[data-cloud]');if(remote) {remote.disabled=true;const file=cloudFiles.find(f=>f.id===remote.dataset.cloud);const data=await D.getPaper(file,cloudFiles);await S.save(data);papers=await S.all();await openPaper(data.paper_id);return toast('论文已下载，可离线阅读');}

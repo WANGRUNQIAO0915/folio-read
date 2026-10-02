@@ -82,7 +82,7 @@
     return s.replace(/\[(\d+(?:\s*[,，–-]\s*\d+)*)\]/g, (m, inner) => {
       const parts = inner.split(/(\s*[,，–-]\s*)/);
       const linked = parts.map((p) => (/^\d+$/.test(p) && PR.refById && PR.refById[p])
-        ? '<a class="cite" data-ref="' + p + '">' + p + "</a>" : p).join("");
+        ? '<a class="cite" href="#ref-' + p + '" data-ref="' + p + '">' + p + "</a>" : p).join("");
       return "[" + linked + "]";
     });
   }
@@ -142,7 +142,8 @@
     // 公式先换成占位符再处理粗体等标记，这样 **粗体里带 $公式$** 也能认出来
     const maths = [];
     MATH.lastIndex = 0;
-    const s = text.replace(MATH, (m, t) => "" + (maths.push(t) - 1) + "");
+    let s = text.replace(MATH, (m, t) => "" + (maths.push(t) - 1) + "");
+    if(opts.cite!==false && window.FolioCitations && PR.citationReferences) s=window.FolioCitations.link(s,PR.citationReferences,keep,PR.esc);
     return inline(s, opts).replace(/(\d+)/g, (m, i) => PR.tex(maths[i].replace(/\\\$/g, "\\$"), false))
       .replace(/\uE002(\d+)\uE003/g, (_, i) => protectedHtml[i]);
   };

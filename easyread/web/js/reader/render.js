@@ -28,6 +28,7 @@
     PR.xindex = { eq: {}, tab: {}, fig: {}, sec: {} };
     PR.headings = [];
     PR.refById = {};
+    PR.citationReferences = S.paper.references || [];
     PR.order = {};
     (S.paper.references || []).forEach((r) => (PR.refById[String(r.id)] = r));
     (S.paper.blocks || []).forEach((b, i) => {
@@ -172,7 +173,7 @@
       '<p class="paper-meta-line">' + metaLine + '</p><div class="paper-head-actions">' + jump(abstract, '跳到摘要') + jump(body, '进入正文') +
       '</div><details class="paper-information"><summary>文章信息与原文链接</summary><div class="paper-information-body">' +
       (m.title_zh && m.title_en ? '<p class="title-en" lang="en">' + PR.esc(m.title_en) + "</p>" : "") +
-      (by ? '<p class="byline">' + by + "</p>" : "") + '<p class="scope">' + scope + "</p>" + linkIndex + '</div></details>' + creditHtml() + "</header>";
+      (by ? '<p class="byline">' + by + "</p>" : "") + '<p class="scope">' + scope + "</p>" + window.FolioJournal.panel(m,PR.pid,PR.store.mode==='server') + linkIndex + '</div></details>' + creditHtml() + "</header>";
   }
 
   /* 还没译的页：放原页图，边译边读 */
@@ -207,11 +208,12 @@
 
   PR.renderPaper = function () {
     buildIndex();
-    let html = headHtml(), appendixSeen = false, lastPage = 0;
+    let html = headHtml(), appendixSeen = false, lastPage = 0, refsSeen=false;
     const done = new Set((S.paper.translation || {}).done_pages || []);
     const allPages = (S.paper.meta || {}).pages || [];
     for (const b of S.paper.blocks || []) {
       if (!R[b.type]) continue;
+      if(b.type==='references'){if(refsSeen)continue;refsSeen=true;}
       if (b.page && b.page > lastPage + 1) {
         const gap = allPages.filter((p) => p.n > lastPage && p.n < b.page && !done.has(p.n));
         if (gap.length) html += gapHtml(gap);
@@ -222,6 +224,7 @@
       if (b.page) lastPage = Math.max(lastPage, b.page);
       html += sectionHtml(b, extra, mark);
     }
+    if(!refsSeen && (S.paper.references||[]).length)html+=sectionHtml({id:'folio-references',type:'references'},'',false);
     PR.$("#paper").innerHTML = html + pendingHtml(lastPage);
     PR.emit("rendered");
   };

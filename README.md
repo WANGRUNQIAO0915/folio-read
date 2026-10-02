@@ -22,6 +22,8 @@ Folio Read 是一款以阅读为中心的 Windows 桌面应用：把英文论文
 
 iPhone 随身阅读与 Google Drive 同步正在测试版开发中；稳定版 v1.0.0 尚不包含云同步。进度、使用方式和授权要求见[手机同步说明](docs/mobile-sync.md)。
 
+测试版还加入了 easyScholar 期刊分区查询和正文参考文献预览。电脑版在「设置 → 期刊分区」填写个人 SecretKey；密钥只保存在本机，查询结果可同步到手机。点击编号或作者—年份引用可查看条目、跳到文末及打开已有 DOI。详见[期刊与引用说明](docs/journal-and-citations.md)。
+
 ## 界面预览
 
 ![Folio Read 阅读界面：中文正文、原文对照、标注工具栏与文内查找](docs/images/folio-read-reader.jpg)

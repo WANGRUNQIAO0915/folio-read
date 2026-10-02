@@ -621,6 +621,12 @@ def smoke_test(report: Path):
         with urllib.request.urlopen(url + '/api/library', timeout=10) as response:
             listing = json.loads(response.read())
         checks['library_api'] = any(item['id'] == ws.id for item in listing['items'])
+        for asset in ('common/citations.js','common/journal-rank.js','common/settings-scholar.js','reader/references.js'):
+            with urllib.request.urlopen(url+'/web/js/'+asset,timeout=10) as response:
+                checks['bundled_'+asset] = response.status == 200 and len(response.read()) > 100
+        with urllib.request.urlopen(url+'/api/easyscholar',timeout=10) as response:
+            scholar_status = json.loads(response.read())
+        checks['journal_api_no_credentials'] = not scholar_status['configured'] and 'secret_key' not in scholar_status
         checks['server_reuse'] = existing_server(config.HOME) == url
         checks['bundled_katex'] = (config.WEB / 'vendor/katex/katex.min.js').is_file()
         checks['external_data'] = str(config.HOME) not in str(config.WEB)

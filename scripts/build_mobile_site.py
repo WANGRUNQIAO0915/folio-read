@@ -9,7 +9,7 @@ MOBILE_FILES = (
     'index.html', 'manifest.webmanifest', 'mobile.css', 'core.js', 'storage.js',
     'drive.js', 'app.js', 'sw.js', 'config.json', 'icon-192.png', 'icon-512.png',
 )
-SHARED_FILES = ('favicon.svg', 'css/base.css', 'js/common/markup.js')
+SHARED_FILES = ('favicon.svg', 'css/base.css', 'js/common/markup.js', 'js/common/journal-rank.js', 'js/common/citations.js')
 
 
 def build_site(web: Path, build: Path) -> Path:
