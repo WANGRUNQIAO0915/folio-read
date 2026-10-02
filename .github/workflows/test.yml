@@ -46,6 +46,7 @@ jobs:
           grep -q "Folio Read" page.html
           curl -sf http://127.0.0.1:8799/web/js/common/confirm.js -o /dev/null
           curl -sf http://127.0.0.1:8799/web/css/base.css -o /dev/null
+          for file in app detail help import settings-library sidebar; do curl -sf "http://127.0.0.1:8799/web/js/library/$file.js" -o /dev/null || exit 1; done
           echo OK
 
   start-sh:
