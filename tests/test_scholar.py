@@ -27,7 +27,7 @@ class ScholarTest(unittest.TestCase):
 
     def test_key_local_and_status_redacted(self):
         self.assertNotIn(self.key, json.dumps(self.scholar.status()))
-        self.assertNotIn(self.key, self.scholar.cfg_path.read_text())
+        self.assertNotIn(self.key, self.scholar.cfg_path.read_text(encoding='utf-8'))
         if os.name == 'nt':
             self.assertNotIn(self.key.encode(), self.scholar.key_path.read_bytes())
         self.assertEqual(self.scholar._key(),self.key)
@@ -44,7 +44,7 @@ class ScholarTest(unittest.TestCase):
             self.scholar.configure({'secret_key':'different-account-secret'})
             self.scholar.query('Journal A & B')
             self.assertEqual(fetch.call_count,3)
-        self.assertNotIn(self.key,self.scholar.cache_path.read_text())
+        self.assertNotIn(self.key,self.scholar.cache_path.read_text(encoding='utf-8'))
 
     def test_url_encoding_and_network_error_redaction(self):
         class Response:
