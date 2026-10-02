@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Folio Read 自用版 · 文献库</title>
+<link rel="icon" href="/web/favicon.svg">
+<link rel="stylesheet" href="/web/css/base.css">
+<link rel="stylesheet" href="/web/css/library.css">
+<link rel="stylesheet" href="/web/css/settings.css">
+<link rel="stylesheet" href="/web/css/workspace.css">
+<script>try{var p=JSON.parse((localStorage.getItem("easyread-prefs")||localStorage.getItem("coread-prefs"))||"{}");var d=p.theme==="dark"||(p.theme!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.dataset.theme=d?"dark":"light"}catch(e){}</script>
+</head>
+<body class="library-page">
+<header id="workspaceNav" class="workspace-nav"></header>
+<header class="topbar">
+  <a class="brand" href="/"><svg class="mark" aria-hidden="true" viewBox="0 0 32 32"><rect x="1" y="1" width="30" height="30" rx="8" fill="#cc7d5e"/><path d="M16 10.5C13.6 8.8 10.4 8.3 7 8.6v14.2c3.4-.3 6.6.2 9 1.9 2.4-1.7 5.6-2.2 9-1.9V8.6c-3.4-.3-6.6.2-9 1.9z" fill="#f9f9f7"/><path d="M16 10.5v14.2" stroke="#cc7d5e" stroke-width="1.2"/><path d="M9.4 13.4h4M9.4 16.4h4M9.4 19.4h2.6" stroke="#b5917f" stroke-width="1.6" stroke-linecap="round"/><path d="M18.6 13.4h4M18.6 16.4h4M18.6 19.4h2.6" stroke="#cc7d5e" stroke-width="1.6" stroke-linecap="round"/></svg><span>Folio Read</span></a>
+  <button class="btn line" id="libraryFilter" aria-expanded="false">分类</button>
+  <label class="search">
+    <span class="si"></span>
+    <input id="q" type="search" placeholder="搜索全文、术语、笔记与 AI 对话" autocomplete="off" maxlength="200">
+    <kbd>/</kbd>
+  </label>
+  <span class="grow"></span>
+  <button class="engine-chip" id="engineChip"></button>
+  <button class="btn accent" id="importBtn"></button>
+  <button class="btn icon" id="helpBtn" title="帮助与快捷键（?）"></button>
+  <button class="btn icon" id="settingsBtn" title="设置"></button>
+</header>
+
+<div class="lib">
+  <nav class="side" id="side"></nav>
+  <main class="main">
+    <div class="list-head">
+      <h1 id="viewTitle">全部论文</h1>
+      <span class="count" id="count"></span>
+
+      <span class="grow"></span>
+      <label class="sort">排序
+        <select id="sort" class="input">
+          <option value="opened">最近打开</option>
+          <option value="added">最近添加</option>
+          <option value="year">发表年份</option>
+          <option value="title">标题</option>
+        </select>
+      </label>
+    </div>
+    <div id="resumeReading" class="resume-reading" hidden></div>
+    <div id="list" class="list" role="listbox" tabindex="0"></div>
+  </main>
+  <aside class="detail" id="detail"></aside>
+</div>
+
+<div class="drop-overlay" id="dropOverlay"><div><div class="big">松手导入</div><div class="hint">可以一次拖多个 PDF</div></div></div>
+
+<div class="dialog-backdrop" id="importDlg"><div class="dialog" role="dialog" aria-label="导入论文"></div></div>
+<div class="dialog-backdrop" id="settingsDlg"><div class="dialog wide" role="dialog" aria-label="设置"></div></div>
+<div class="dialog-backdrop" id="textDlg"><div class="dialog wide" role="dialog"></div></div>
+<input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
+<div id="toast" role="status"></div>
+
+<script src="/web/js/common/util.js"></script>
+<script src="/web/js/common/confirm.js"></script>
+<script src="/web/js/common/navigation.js"></script>
+<script src="/web/js/common/features.js"></script>
+<script src="/web/js/library/app.js"></script>
+<script src="/web/js/library/sidebar.js"></script>
+<script src="/web/js/library/detail.js"></script>
+<script src="/web/js/library/import.js"></script>
+<script src="/web/js/common/settings-models.js"></script>
+<script src="/web/js/common/settings.js"></script>
+<script src="/web/js/common/settings-tabs.js"></script>
+<script src="/web/js/common/settings-chat.js"></script>
+<script src="/web/js/common/personal.js"></script>
+<script src="/web/js/library/settings-library.js"></script>
+<script src="/web/js/library/help.js"></script>
+</body>
+</html>

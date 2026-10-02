@@ -1,0 +1,33 @@
+[project]
+name = "folio-read"
+version = "1.0.0"
+description = "Folio Read：把英文论文读成舒服的中文——后台翻译、对照原文、批注笔记、文献库"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["paper", "translation", "reader", "arxiv", "llm", "论文翻译"]
+dependencies = [
+  "pypdfium2>=4.30",
+  "pdfplumber>=0.11",
+  "pillow>=10",
+  "pypdf>=4",
+]
+
+[project.optional-dependencies]
+desktop = ["pywebview>=6.2,<7"]
+windows-build = ["pywebview>=6.2,<7", "pyinstaller>=6.22"]
+
+[project.scripts]
+folio-read = "easyread.cli:main"
+folio = "easyread.cli:main"
+easyread = "easyread.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["easyread"]
+
+[tool.setuptools.package-data]
+easyread = ["check_tex.js", "web/*", "web/**/*"]
