@@ -104,7 +104,8 @@ def empty_discussion() -> dict:
 # 每个操作幂等、带时间戳；同一对象以较新的为准。页面断网时操作留在浏览器，恢复后重发不会重复或倒退。
 
 def _newer(a: str | None, b: str | None) -> bool:
-    return (a or "") >= (b or "")
+    from .portable import timestamp
+    return timestamp(a) >= timestamp(b)
 
 
 def apply_ops(reader: dict, ops: list[dict]) -> list[str]:
@@ -191,16 +192,22 @@ class Workspace:
         ops = [{**op, "at": op.get("at") or now_iso()} if op.get("op") == "progress" else op for op in ops]
         with dir_lock(self.root):
             reader = self.load("reader")
+            cloud_pending = None
+            if reader.get('_cloud'):
+                from .portable import capture_ops
+                cloud_pending = capture_ops(reader, ops)
             previous_progress_at = (reader.get("progress") or {}).get("at") or ""
             applied = apply_ops(reader, ops)
             if applied:
                 self._journal(ops, client)
                 self._snapshot()
+                if cloud_pending is not None:
+                    reader['_cloud']['pending'] = cloud_pending
                 write_json_atomic(self.reader_path, reader)
                 progress = reader.get("progress") or {}
                 active_progress = any(
                     op.get("op") == "progress" and op.get("active") is True
-                    and op.get("at") == progress.get("at") and op["at"] > previous_progress_at
+                    and op.get("at") == progress.get("at") and _newer(op["at"], previous_progress_at) and op["at"] != previous_progress_at
                     for op in ops
                 )
                 if active_progress and (progress.get("block") not in (None, "head") or progress.get("ratio", 0) > 0):

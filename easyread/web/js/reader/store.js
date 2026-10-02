@@ -19,6 +19,7 @@
 
   /* ---------- 和 Python store.apply_ops 同一套规则 ---------- */
   function applyOps(reader, ops) {
+    const time = value => Number.isFinite(Date.parse(value || '')) ? Date.parse(value) : 0;
     reader.edits = reader.edits || {};
     reader.notes = reader.notes || {};
     reader.progress = reader.progress || {};
@@ -26,7 +27,7 @@
       const at = op.at || PR.nowIso();
       if (op.op === "edit") {
         const cur = reader.edits[op.block];
-        if (cur && (cur.at || "") > at) continue;
+        if (cur && time(cur.at) > time(at)) continue;
         if (op.zh == null) { if (cur) reader.edits[op.block] = { reverted: true, prev: cur.zh, at }; }
         else {
           const e = { zh: op.zh, base: op.base || "", at };
@@ -35,16 +36,16 @@
         }
       } else if (op.op === "note") {
         const cur = reader.notes[op.note.id];
-        if (cur && (cur.updated || "") > (op.note.updated || "")) continue;
+        if (cur && time(cur.updated) > time(op.note.updated)) continue;
         reader.notes[op.note.id] = JSON.parse(JSON.stringify(op.note));
       } else if (op.op === "note_del") {
         const cur = reader.notes[op.id];
-        if (cur && at >= (cur.updated || "")) { cur.deleted = true; cur.updated = at; }
+        if (cur && time(at) >= time(cur.updated)) { cur.deleted = true; cur.updated = at; }
       } else if (op.op === "paper_note") {
         const cur = reader.paper_note || {};
-        if (at >= (cur.at || "")) reader.paper_note = { body: op.body || "", at };
+        if (time(at) >= time(cur.at)) reader.paper_note = { body: op.body || "", at };
       } else if (op.op === "progress") {
-        if (at >= (reader.progress.at || "")) Object.assign(reader.progress, { block: op.block, at }, op.ratio != null ? { ratio: op.ratio } : {});
+        if (time(at) >= time(reader.progress.at)) Object.assign(reader.progress, { block: op.block, at }, op.ratio != null ? { ratio: op.ratio } : {});
       }
     }
     return reader;

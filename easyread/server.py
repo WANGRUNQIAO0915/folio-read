@@ -37,6 +37,8 @@ class App:
         self.jobs = Jobs(self.lib)
         self.study = study.Tasks(self.lib)
         self.token = os.urandom(12).hex()
+        from .drive import Drive
+        self.drive = Drive(config.HOME, self.lib)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -184,6 +186,8 @@ class Handler(BaseHTTPRequestHandler):
                                     "first_run": config.is_first_run(), "version": __version__})
         if path == "/api/config":
             return self._json(200, {"config": config.public(config.load()), "presets": config.PRESETS, "groups": config.PRESET_GROUPS})
+        if path == '/api/drive':
+            return self._json(200, app.drive.status())
         if path == "/api/engines":
             cfg = config.load()
             found = detect.detect(cfg, fresh=parse_qs(url.query).get("fresh") == ["1"])
@@ -284,6 +288,25 @@ class Handler(BaseHTTPRequestHandler):
         path = unquote(url.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         app, lib = self.app, self.app.lib
+
+        if path.startswith('/api/drive/'):
+            body = json.loads(self._body() or b'{}')
+            action = path.rsplit('/', 1)[-1]
+            if action == 'config':
+                app.drive.configure(body)
+            elif action == 'select':
+                if app.drive.busy:
+                    raise ValueError('请等同步结束后再修改选择')
+                app.drive.select(body.get('ids', []))
+            elif action in ('login', 'sync'):
+                app.drive.run(action)
+            elif action == 'pull':
+                app.drive.run('pull', str(body.get('file_id') or ''))
+            elif action == 'disconnect':
+                app.drive.disconnect()
+            else:
+                raise ValueError('未知云盘操作')
+            return self._json(200, app.drive.status())
 
         if path == "/api/import":  # 请求体就是 PDF 文件
             data = self._body()

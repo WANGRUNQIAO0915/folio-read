@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f9f9f7">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>Folio Read · 随身阅读</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="../favicon.svg">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="../css/base.css">
+  <link rel="stylesheet" href="../vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="mobile.css">
+  <script defer src="../vendor/katex/katex.min.js"></script>
+  <script defer src="core.js"></script>
+  <script defer src="../js/common/markup.js"></script>
+  <script defer src="storage.js"></script>
+  <script defer src="drive.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header id="appHeader"><a id="home" href="#library" aria-label="返回文献库"><img src="../favicon.svg" alt=""> <b>Folio Read</b></a><span id="headerStatus">随身阅读</span><button id="importButton" class="action" aria-label="导入离线论文">＋</button></header>
+  <main id="app"></main>
+  <nav id="tabs" aria-label="主导航"><button data-view="library" class="active">阅读</button><button data-view="notes">笔记</button><button data-view="settings">设置</button></nav>
+  <input id="importFile" type="file" accept=".html,.json" hidden>
+  <dialog id="sheet"><header><h2 id="sheetTitle"></h2><button id="sheetClose" aria-label="关闭">×</button></header><div id="sheetBody"></div></dialog>
+  <section id="selectionTools" aria-label="选中文字操作" hidden><button data-color="yellow" aria-label="黄色标注">黄</button><button data-color="green" aria-label="绿色标注">绿</button><button data-color="blue" aria-label="蓝色标注">蓝</button><button data-color="pink" aria-label="红色标注">红</button><button id="selectionNote">注记</button><button id="selectionCancel" aria-label="取消选择">×</button></section>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <noscript>请在 Safari 中开启 JavaScript，以使用离线阅读和笔记。</noscript>
+</body>
+</html>

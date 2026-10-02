@@ -4,7 +4,7 @@
 (function (PR) {
   "use strict";
   const dlg = () => PR.$("#settingsDlg");
-  const ALL_TABS = [["engine", "翻译"], ["chat", "问 AI"], ["personal", "自用"], ["reading", "阅读"], ["library", "侧边栏"], ["keys", "快捷键"]];
+  const ALL_TABS = [["engine", "翻译"], ["chat", "问 AI"], ["personal", "自用"], ["reading", "阅读"], ["cloud", "云同步"], ["library", "侧边栏"], ["keys", "快捷键"]];
   const tabs = () => ALL_TABS.filter(([k]) => PR.settingsTabs[k]);  // “侧边栏”页只在文献库页面有
   PR.settingsTabs = PR.settingsTabs || {};
   const st = (PR.settingsState = { tab: "engine", cfg: null, presets: [], groups: [], found: null, chat: null, ui: null });

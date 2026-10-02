@@ -3,6 +3,9 @@ __pycache__/
 *.pyc
 /library/
 /config.json
+/drive-config.json
+/.drive-tokens.bin
+/.drive-cache/
 .server.json
 easyread.log*
 tests/shots/

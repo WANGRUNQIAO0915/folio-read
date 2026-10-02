@@ -18,6 +18,10 @@ A desktop paper reader with translation, annotations, and personal-library Q&A.
 
 Folio Read 是一款以阅读为中心的 Windows 桌面应用：把英文论文整理为可阅读的中文正文，对照原文看图表、标注和记笔记，再让 AI 根据当前论文或收藏的资料库回答问题。文献与笔记保存在本机，翻译和问答可连接你自己的模型服务。
 
+本项目基于 [EasyRead](https://github.com/Edwardxlai/easyread) 开发，保留上游 MIT 许可证与原作者版权声明。
+
+iPhone 随身阅读与 Google Drive 同步正在测试版开发中；稳定版 v1.0.0 尚不包含云同步。进度、使用方式和授权要求见[手机同步说明](docs/mobile-sync.md)。
+
 ## 界面预览
 
 ![Folio Read 阅读界面：中文正文、原文对照、标注工具栏与文内查找](docs/images/folio-read-reader.jpg)
