@@ -30,7 +30,7 @@ Google 云盘容量取决于用户账号；已有付费空间可直接使用。�
 Google 云盘会员容量与应用登录授权是两项独立配置。使用用户自己的 Google Cloud 项目，启用 Google Drive API，创建同一项目内的两个 OAuth 客户端：
 
 1. **桌面应用**：配置在 Windows 的「设置 → 云同步 → 首次接入配置」。通过系统浏览器登录，使用本机回调和 PKCE。
-2. **Web 应用**：为手机静态站配置「已获授权的 JavaScript 来源」，例如 `https://wangrunqiao0915.github.io`。这是 origin，不能包含 `/folio-read/mobile/` 路径。测试时可另外添加 `http://127.0.0.1:8782`。
+2. **Web 应用**：为手机静态站配置「已获授权的 JavaScript 来源」，例如 `https://wangrunqiao0915.github.io`。这是 origin，不能包含 `/folio-read/mobile/` 路径。测试时可另外添加 `http://localhost:8784`，预览页面也应使用这个来源。
 
 手机的公开客户端 ID 写入 `easyread/web/mobile/config.json` 的 `google_web_client_id`，或在手机设置中填写。该 ID 是公开应用标识；**网页客户端 Secret、refresh token、账号凭据不得提交仓库**。
 
@@ -40,7 +40,9 @@ OAuth 权限只申请 `https://www.googleapis.com/auth/drive.file`，访问该�
 
 ## 部署
 
-仓库「Settings → Pages → Source」选择 GitHub Actions。`mobile-pages.yml` 构建并发布仅含静态代码的站点，手机地址为 `/folio-read/mobile/`。资料不会随 Pages 发布；应用直接与设备存储、用户自己的 Google Drive 通信。
+手机阅读测试版地址为 `https://wangrunqiao0915.github.io/folio-read/mobile/`。测试期间，仓库 Pages 从专用 `gh-pages` 分支的根目录发布构建后的静态资源；开发分支保持独立，稳定版 Windows 下载包不变。
+
+后续将功能合入 main 后，可在仓库「Settings → Pages → Source」选择 GitHub Actions。`mobile-pages.yml` 构建并发布仅含静态代码的站点，手机地址仍为 `/folio-read/mobile/`。资料不会随 Pages 发布；应用直接与设备存储、用户自己的 Google Drive 通信。发布资源保留项目与 KaTeX 的许可文本。
 
 本机服务继续只监听 `127.0.0.1`。不要把桌面服务直接开放到公网作为手机后端。
 

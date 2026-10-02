@@ -10,7 +10,9 @@ class MobileBuildTest(unittest.TestCase):
     def test_public_whitelist_and_cache_revision(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            web = root / 'web'
+            web = root / 'easyread/web'
+            license_text = 'MIT License\nCopyright (c) 2026 LiangXiLin\n'
+            (root / 'LICENSE').write_text(license_text, encoding='utf-8')
             for relative in [*(f'mobile/{name}' for name in MOBILE_FILES), *SHARED_FILES, 'vendor/katex/fonts/test.woff2']:
                 path = web / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -23,6 +25,7 @@ class MobileBuildTest(unittest.TestCase):
             first = (output / 'mobile/sw.js').read_text(encoding='utf-8')
             self.assertRegex(first, r"folio-mobile-[0-9a-f]{20}")
             self.assertFalse((output / 'mobile/private-extra.json').exists())
+            self.assertEqual((output / 'LICENSE').read_text(encoding='utf-8'), license_text)
             (output / 'stale.json').write_text('must not remain', encoding='utf-8')
             build_site(web, root / 'build')
             self.assertEqual(first, (output / 'mobile/sw.js').read_text(encoding='utf-8'))

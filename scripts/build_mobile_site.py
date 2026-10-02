@@ -26,6 +26,7 @@ def build_site(web: Path, build: Path) -> Path:
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(web / relative, destination)
         shutil.copytree(web / 'vendor/katex', stage / 'vendor/katex')
+        shutil.copy2(web.parents[1] / 'LICENSE', stage / 'LICENSE')
         (stage / 'index.html').write_text('<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=mobile/"><title>Folio Read</title><a href="mobile/">打开手机阅读</a>', encoding='utf-8')
         (stage / '.nojekyll').touch()
         digest = hashlib.sha256()
