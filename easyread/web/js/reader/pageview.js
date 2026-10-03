@@ -11,8 +11,10 @@
      长论文有几万个节点，正文宽度一变就要整页重排（两三百毫秒），放在点击的当下会让人觉得按钮反应慢。 */
   PR.side = null;
   let sideT = null;
-  PR.openSide = function (name) {
+  PR.openSide = function (name, instant) {
+    if (name && innerWidth < 1280 && body.classList.contains('drawer-open')) PR.toggleDrawer(false);
     PR.side = name;
+    body.classList.toggle("refs-open", name === "refs");
     body.classList.toggle("study-open", name === "study");
     const companion=PR.$("#companion");if(companion)companion.inert=!name;
     if(PR.syncCompanion)PR.syncCompanion(name);
@@ -26,7 +28,7 @@
     if (name) { const t = PR.$("#toast"); if (t) t.classList.remove("open"); }  // 提示条别挡住面板底部的输入框
     if (body.classList.contains("side-open") === !!name) return;  // 面板之间切换：正文宽度不变
     // 窄窗口面板覆盖正文，不需要重排；延迟的 scrollBy 会打断原文定位。
-    if (innerWidth < 980) {
+    if (instant || innerWidth < 980) {
       body.classList.toggle("side-open", !!name);
       PR.fitWide(); PR.renderMargin();
       return;

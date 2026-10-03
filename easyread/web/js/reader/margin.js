@@ -8,7 +8,7 @@
   PR.editingNote = null;
   PR.asking = new Set();   // 正在等模型回答的问题
 
-  PR.myNotes = () => Object.values(S.reader.notes || {}).filter((n) => !n.deleted);
+  PR.myNotes = () => Object.values(S.reader.notes || {}).filter((n) => !n.deleted || (n._syncConflicts || []).some(c => !c.deleted));
   PR.repliesTo = (nid) => (S.discussion.entries || []).filter((e) => e.reply_to === nid);
   const anchorOf = (a) => (a && (a === "head" || PR.blockById[a]) ? a : "head");
   PR.anchorOfEntry = (e) => anchorOf(e.anchor || (((S.reader.notes || {})[e.reply_to] || {}).anchor));
@@ -58,7 +58,9 @@
         '<div class="acts"><button data-a="edit">编辑</button><button data-a="kind">' + (d.kind === "question" ? "改成笔记" : "改成问题") + '</button><button data-a="del">删除</button></div>';
     return '<div class="card mine' + (editing ? " editing" : "") + (d.color ? " c-" + d.color : "") + '" data-note="' + PR.esc(d.id) + '" data-anchor="' + PR.esc(item.anchor) + '">' +
       '<div class="lbl"><span>' + lbl + '</span><span class="meta">' + PR.shortTime(d.updated || d.created) + "</span></div>" +
-      (d.quote ? '<div class="quote' + lost + '">「' + PR.md(d.quote, { cite: false, xref: false }) + "」</div>" : "") + body + "</div>";
+      (d.quote ? '<div class="quote' + lost + '">「' + PR.md(d.quote, { cite: false, xref: false }) + "」</div>" : "") + body +
+      (d._syncConflicts || []).map(n => '<details class="sync-conflict"><summary>另一设备的修改 · '+(n.deleted?'已删除':'保留版本')+'</summary><p>'+PR.esc(n.body || n.quote || '')+'</p></details>').join('') +
+      ((d._syncConflicts || []).length ? '<p class="hint">请检查保留版本，合并到笔记后再确认。</p><button data-a="resolve">确认采用当前版本'+(d.deleted?'（删除）':'')+'</button>':'') + "</div>";
   }
   PR.cardHtml = cardHtml;
   PR.collectNotes = collect;
@@ -222,6 +224,12 @@
   });
 
   PR.cardClick = function (e, inPanel) {
+    const resolved=e.target.closest('[data-a="resolve"]');
+    if(resolved) {
+      const card=resolved.closest('[data-note]'),current=card && noteById(card.dataset.note);
+      if(current){const note={...current,updated:PR.nowIso()};delete note._syncConflicts;PR.commit({op:'note',note,resolve_conflicts:true});PR.renderMargin();if(PR.notesPanelOpen && PR.notesPanelOpen())PR.renderNotesPanel();}
+      return true;
+    }
     const card = e.target.closest(".card");
     if (!card) return false;
     const a = e.target.closest("[data-a]"), k = e.target.closest("[data-k]"), col = e.target.closest("[data-color]");

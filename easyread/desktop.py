@@ -344,6 +344,10 @@ def check_window(home: Path, url: str, paper_id: str, checks: dict):
                 "Array.from(document.querySelectorAll('#workspaceNav nav a')).map(a => a.textContent).join('|') === '阅读|文献库|知识问答|研究主题'")
             checks['compact_paper_information'] = window.evaluate_js(
                 "!!document.querySelector('.paper-meta-line') && !document.querySelector('.paper-information').open")
+            checks['phone_original_readable_without_translation'] = window.evaluate_js('''(() => {
+                const original=document.querySelector('#b-phone-original .en.original-primary');
+                return original && getComputedStyle(original).display==='block' && original.textContent==='Original PDF text imported on a phone.';
+            })()''')
             checks['translated_source_link_in_native_window'] = window.evaluate_js('''(() => {
                 const link = document.querySelector('#b-p1-link .zh a');
                 return !!link && link.textContent === '查看补充材料' &&
@@ -362,6 +366,33 @@ def check_window(home: Path, url: str, paper_id: str, checks: dict):
             })()''')
             checks['gui_persistent_profile'] = (home / 'desktop-cache').is_dir()
             checks['gui_exports_enabled'] = __import__('webview').settings['ALLOW_DOWNLOADS']
+            # Windows DPI scaling can make a 1280px native window narrower than
+            # the docked-layout breakpoint in CSS pixels.
+            window.resize(1600, 1000)
+            checks['outline_wide_viewport'] = wait_for_ui('innerWidth >= 1100', 5)
+            checks['outline_deduplicates_page_headings'] = window.evaluate_js('''(() => {
+                document.querySelector('[data-act=drawer]').click();
+                return document.querySelectorAll('#drawer [data-go]').length === 3 &&
+                    document.querySelectorAll('#drawer [data-go="outline-method"]').length === 1 &&
+                    !document.querySelector('#drawer [data-go="outline-repeat"]');
+            })()''')
+            checks['outline_docked_without_covering_text'] = wait_for_ui('''(() => {
+                const drawer = document.querySelector('#drawer').getBoundingClientRect();
+                const paper = document.querySelector('#paper').getBoundingClientRect();
+                return paper.left >= drawer.right && getComputedStyle(document.querySelector('#scrim')).pointerEvents === 'none';
+            })()''')
+            checks['outline_three_level_fold'] = window.evaluate_js('''(() => {
+                const child = document.querySelector('#drawer [data-go="outline-third"]');
+                const indent = parseFloat(getComputedStyle(child.parentElement).paddingLeft);
+                document.querySelector('#drawer [data-fold="outline-method"]').click();
+                return indent >= 28 && document.querySelector('#drawer [data-fold="outline-method"]').getAttribute('aria-expanded') === 'false' &&
+                    document.querySelector('#drawer [data-outline-id="outline-method"] > ul').hidden;
+            })()''')
+            checks['outline_close_accessible'] = window.evaluate_js('''(() => {
+                document.querySelector('[data-drawer-close]').click();
+                return !document.body.classList.contains('drawer-open') && document.querySelector('#drawer').inert &&
+                    document.querySelector('[data-act=drawer]').getAttribute('aria-expanded') === 'false';
+            })()''')
             check_reading_tools(window, home, paper_id, checks, wait_for_ui)
             deadline = time.monotonic() + 15
             while time.monotonic() < deadline:
@@ -601,17 +632,24 @@ def smoke_test(report: Path):
         ws, fresh = app.lib.create_from_pdf(buffer.getvalue(), 'standalone-test.pdf')
         pages = pdfwork.prepare(ws.root)
         ws.update('paper', lambda p: p['meta'].update(pages=pages, page_count=len(pages)))
-        ws.update('paper', lambda p: p.update(blocks=[{'id': 'fig1', 'type': 'figure', 'page': 1, 'num': '1', 'src': '',
+        ws.update('paper', lambda p: p.update(blocks=[
+                                                     {'id':'outline-method','type':'heading','num':'2','level':1,'zh':'方法','page':1},
+                                                     {'id':'outline-child','type':'heading','num':'2.1','level':2,'zh':'步骤','page':1},
+                                                     {'id':'outline-repeat','type':'heading','num':'2','level':1,'zh':'方法','page':1},
+                                                     {'id':'outline-child-repeat','type':'heading','num':'2.1','level':2,'zh':'步骤','page':1},
+                                                     {'id':'outline-third','type':'heading','num':'2.1.1','level':3,'zh':'具体操作','page':1},
+                                                     {'id': 'fig1', 'type': 'figure', 'page': 1, 'num': '1', 'src': '',
                                                       'caption_en': 'Figure 1. Standalone image test.', 'caption_zh': '图 1：桌面图片验证'},
                                                      {'id': 'p1-link', 'type': 'para', 'page': 1,
                                                       'en': 'View supplementary material', 'zh': '查看补充材料'},
                                                      {'id': 'p1-url', 'type': 'para', 'page': 1,
                                                       'en': 'Website', 'zh': '资料网站：https://example.org/data?a=1&b=2'},
                                                      {'id': 'p1-more', 'type': 'para', 'page': 1,
-                                                      'en': 'Another passage for search verification.', 'zh': '第二条资料用于查找验证。'}],
+                                                      'en': 'Another passage for search verification.', 'zh': '第二条资料用于查找验证。'},
+                                                     {'id':'phone-original','type':'para','page':1,'en':'Original PDF text imported on a phone.','zh':''}],
                                               translation={'done_pages': [1]}))
         pdfwork.locate(ws.root)
-        checks['automatic_figure_crop'] = figures.ensure(ws) == 1 and bool(ws.load('paper')['blocks'][0].get('src'))
+        checks['automatic_figure_crop'] = figures.ensure(ws) == 1 and bool(next(b for b in ws.load('paper')['blocks'] if b['id']=='fig1').get('src'))
         checks['pdf_import'] = fresh
         checks['pdf_render'] = len(pages) == 1 and (ws.root / pages[0]['img']).stat().st_size > 100
         checks['pdf_text'] = 'EasyRead standalone PDF test' in (ws.root / 'extract/page-001.txt').read_text(encoding='utf-8')
@@ -621,6 +659,12 @@ def smoke_test(report: Path):
         with urllib.request.urlopen(url + '/api/library', timeout=10) as response:
             listing = json.loads(response.read())
         checks['library_api'] = any(item['id'] == ws.id for item in listing['items'])
+        for asset in ('common/citations.js','common/journal-rank.js','common/settings-scholar.js','reader/references.js','reader/outline.js'):
+            with urllib.request.urlopen(url+'/web/js/'+asset,timeout=10) as response:
+                checks['bundled_'+asset] = response.status == 200 and len(response.read()) > 100
+        with urllib.request.urlopen(url+'/api/easyscholar',timeout=10) as response:
+            scholar_status = json.loads(response.read())
+        checks['journal_api_no_credentials'] = not scholar_status['configured'] and 'secret_key' not in scholar_status
         checks['server_reuse'] = existing_server(config.HOME) == url
         checks['bundled_katex'] = (config.WEB / 'vendor/katex/katex.min.js').is_file()
         checks['external_data'] = str(config.HOME) not in str(config.WEB)
@@ -642,7 +686,7 @@ def smoke_test(report: Path):
             headers={'X-Token': listing['token'], 'Content-Type': 'application/json'})
         with urllib.request.urlopen(req, timeout=10) as response:
             saved_image = json.loads(response.read())
-        checks['manual_figure_crop_saved'] = (ws.root / saved_image['src']).is_file() and ws.load('paper')['blocks'][0]['image_method'] == 'manual'
+        checks['manual_figure_crop_saved'] = (ws.root / saved_image['src']).is_file() and next(b for b in ws.load('paper')['blocks'] if b['id']=='fig1')['image_method'] == 'manual'
         # A saved answer exercises the packaged UI without consuming an AI request.
         write_json_atomic(study.run_dir() / 'run-f000000000000001.json', {
             'id': 'run-f000000000000001', 'mode': 'knowledge', 'state': 'done', 'created': now_iso(),

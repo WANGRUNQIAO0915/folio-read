@@ -3,6 +3,11 @@ __pycache__/
 *.pyc
 /library/
 /config.json
+/drive-config.json
+/.drive-tokens.bin
+/.drive-cache/
+/easyscholar-config.json
+/.easyscholar-*
 .server.json
 easyread.log*
 tests/shots/

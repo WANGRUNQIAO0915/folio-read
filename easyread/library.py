@@ -33,6 +33,7 @@ class Library:
 
     # ---------- 列表摘要 ----------
     def summary(self, ws: Workspace) -> dict:
+        from .scholar import visible_rank
         paper = ws.load("paper") or {}
         meta = dict(paper.get("meta", {}))
         item = ws.load("item") or {}
@@ -57,6 +58,7 @@ class Library:
             "authors": meta.get("authors", ""), "affiliation": meta.get("affiliation", ""),
             "year": meta.get("year") or _year(meta.get("date", "")), "date": meta.get("date", ""),
             "venue": meta.get("venue", ""), "arxiv": meta.get("arxiv", ""), "url": _link(meta), "doi": meta.get("doi", ""),
+            "journal_rank": visible_rank(meta),
             "pages": meta.get("page_count", 0), "done_pages": len(tr.get("done_pages", [])),
             "abstract": abstract,
             "meta_override": item.get("meta_override") or {},

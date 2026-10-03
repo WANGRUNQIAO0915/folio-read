@@ -26,15 +26,20 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: 安装（非 editable，顺便检查网页文件打进了包）
         run: python -m pip install .
-      - name: 单元测试
-        run: python -m unittest discover tests -v
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: 单元测试
+        run: python -m unittest discover tests -v
       - name: 前端回归检查
         run: |
           node tests/test_chat_export.cjs
           node tests/test_markup_links.cjs
+          node tests/test_mobile.cjs
+          node tests/test_mobile_drive.cjs
+          node tests/test_citations.cjs
+          node tests/test_outline.cjs
+          node tests/test_mobile_knowledge.cjs
       - name: 启动服务，打开文献库页
         run: |
           cd "$RUNNER_TEMP"
@@ -44,6 +49,7 @@ jobs:
           grep -q "Folio Read" page.html
           curl -sf http://127.0.0.1:8799/web/js/common/confirm.js -o /dev/null
           curl -sf http://127.0.0.1:8799/web/css/base.css -o /dev/null
+          for file in app detail help import settings-library sidebar; do curl -sf "http://127.0.0.1:8799/web/js/library/$file.js" -o /dev/null || exit 1; done
           echo OK
 
   start-sh:

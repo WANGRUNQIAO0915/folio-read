@@ -15,13 +15,14 @@
   };
   PR.currentHeading = function () {
     const id = PR.readingBlock();
+    if (id === 'folio-references') return id;
     if (!PR.blockById[id]) return null;
     let cur = null;
     for (const b of S.paper.blocks || []) {
       if (b.type === "heading" || b.type === "references") cur = b.id;
       if (b.id === id) break;
     }
-    return cur;
+    return PR.outline && PR.outline.byId[cur] ? PR.outline.byId[cur].id : cur;
   };
 
   let lastBlock = null;
@@ -32,7 +33,7 @@
   document.addEventListener('wheel', markReadingIntent, {passive:true});
   document.addEventListener('touchmove', markReadingIntent, {passive:true});
   document.addEventListener('keydown', e => {if (['ArrowDown','ArrowUp','PageDown','PageUp','Home','End',' '].includes(e.key)) markReadingIntent(e);});
-  document.addEventListener('pointerdown', e => {if (e.target.closest('[data-reading-jump], #paper .xref, #paper .cite')) markReadingIntent(e);});
+  document.addEventListener('pointerdown', e => {if (e.target.closest('[data-reading-jump], #drawer [data-go], #drawer [data-go-orig], #paper .xref, #paper .cite')) markReadingIntent(e);});
   const saveProgress = PR.debounce(() => {
     const id = PR.readingBlock();
     const max = document.documentElement.scrollHeight - innerHeight;
@@ -53,6 +54,7 @@
       const h = PR.blockById[PR.currentHeading()];
       PR.$(".bar-section").textContent = h ? (h.num ? h.num + " " : "") + PR.plain(PR.textFor(h.id) || h.zh) : "";
       PR.syncPage(false);
+      PR.syncOutline();
     }
     saveProgress();
   }, 120);
@@ -147,7 +149,10 @@
     PR.renderJobState();
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", PR.debounce(() => { PR.fitWide(); PR.renderMargin(); }, 150));
+    window.addEventListener("resize", PR.debounce(() => {
+      if (PR.side && innerWidth < 1280 && body.classList.contains('drawer-open')) PR.toggleDrawer(false);
+      PR.fitWide(); PR.renderMargin();
+    }, 150));
     if (document.fonts) document.fonts.ready.then(() => { PR.fitWide(); PR.layoutMargin(); });
     new ResizeObserver(PR.debounce(() => PR.layoutMargin(), 80)).observe(PR.$("#paper"));
     PR.startPolling();

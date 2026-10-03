@@ -37,6 +37,10 @@ class App:
         self.jobs = Jobs(self.lib)
         self.study = study.Tasks(self.lib)
         self.token = os.urandom(12).hex()
+        from .drive import Drive
+        self.drive = Drive(config.HOME, self.lib)
+        from .scholar import Scholar
+        self.scholar = Scholar(config.HOME, self.lib)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -179,11 +183,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(_safe(WEB, path[5:]), cache=path.startswith("/web/vendor/"))
         if path == "/api/library":
             cfg = config.load()
+            app.scholar.refresh(automatic=True)
             return self._json(200, {"items": lib.list(), "token": app.token, "jobs": app.jobs.small_status(),
                                     "engine": cfg.get("engine"), "engine_label": _engine_label(cfg),
                                     "first_run": config.is_first_run(), "version": __version__})
         if path == "/api/config":
             return self._json(200, {"config": config.public(config.load()), "presets": config.PRESETS, "groups": config.PRESET_GROUPS})
+        if path == '/api/drive':
+            return self._json(200, app.drive.status())
+        if path == '/api/easyscholar':
+            return self._json(200, app.scholar.status())
         if path == "/api/engines":
             cfg = config.load()
             found = detect.detect(cfg, fresh=parse_qs(url.query).get("fresh") == ["1"])
@@ -284,6 +293,43 @@ class Handler(BaseHTTPRequestHandler):
         path = unquote(url.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         app, lib = self.app, self.app.lib
+
+        if path.startswith('/api/easyscholar/'):
+            body = json.loads(self._body() or b'{}')
+            if not isinstance(body, dict):
+                raise ValueError('请求必须是对象')
+            action = path.rsplit('/', 1)[-1]
+            if action == 'config':
+                return self._json(200, app.scholar.configure(body))
+            if action == 'lookup':
+                ws = lib.ws(str(body.get('paper_id') or ''))
+                if not ws:
+                    raise ValueError('找不到论文')
+                result = app.scholar.lookup(ws, body.get('publication_name'), bool(body.get('force')))
+                return self._json(200, {'journal_rank': result})
+            if action == 'refresh':
+                app.scholar.refresh(force=bool(body.get('force')))
+                return self._json(200, app.scholar.status())
+            raise ValueError('未知期刊分区操作')
+
+        if path.startswith('/api/drive/'):
+            body = json.loads(self._body() or b'{}')
+            action = path.rsplit('/', 1)[-1]
+            if action == 'config':
+                app.drive.configure(body)
+            elif action == 'select':
+                if app.drive.busy:
+                    raise ValueError('请等同步结束后再修改选择')
+                app.drive.select(body.get('ids', []),sync_all=bool(body.get('sync_all',False)))
+            elif action in ('login', 'sync'):
+                app.drive.run(action)
+            elif action == 'pull':
+                app.drive.run('pull', str(body.get('file_id') or ''))
+            elif action == 'disconnect':
+                app.drive.disconnect()
+            else:
+                raise ValueError('未知云盘操作')
+            return self._json(200, app.drive.status())
 
         if path == "/api/import":  # 请求体就是 PDF 文件
             data = self._body()
