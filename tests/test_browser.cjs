@@ -138,7 +138,16 @@ async function importPdf() {
   assert.equal(imported.status(), 200, 'PDF import succeeds');
   assert.equal(new URL(imported.url()).searchParams.get('translate'), '0', 'import does not request translation');
   await page.locator('#importDlg.open').waitFor({ state: 'hidden' });
-  return imported.json();
+  // Chromium can evict upload responses from its inspector cache, including
+  // before response.json() is read. Verify the user-visible result and real
+  // persisted bytes below instead of depending on CDP response-body retention.
+  await row().waitFor();
+  await waitText('#count', '1 篇');
+  assert.equal(page.url(), url + '/', 'import remains in the library');
+  assert.equal(await page.locator('#list .row').count(), 1, 'one fixture row is listed');
+  assert.deepEqual(fs.readdirSync(LIBRARY, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && !entry.name.startsWith('.')).map(entry => entry.name),
+  [pid], 'exactly one workspace exists, identified by the uploaded PDF hash');
 }
 
 async function search(query, expectedCount) {
@@ -149,10 +158,10 @@ async function search(query, expectedCount) {
   await page.locator('#q').fill(query);
   const result = await response;
   assert.equal(result.status(), 200);
-  assert.deepEqual((await result.json()).errors, [], 'search files are readable');
   await waitText('#count', expectedCount + ' 篇');
   assert.equal(await page.locator('#list .row').count(), expectedCount);
   if (expectedCount) assert.match(await row().locator('.search-hit').innerText(), /Offline Regression/);
+  else assert.match(await page.locator('#list .empty-state').innerText(), /没有符合条件的论文/);
 }
 
 async function setStatus(status, label) {
@@ -184,7 +193,7 @@ async function openReader() {
   try {
     execFileSync(PYTHON, [SUPPORT, 'fixture', PDF], { cwd: TEMP, env });
     const pdf = fs.readFileSync(PDF);
-    const expectedId = crypto.createHash('sha256').update(pdf).digest('hex').slice(0, 12);
+    pid = crypto.createHash('sha256').update(pdf).digest('hex').slice(0, 12);
     await startServer();
     browser = await chromium.launch({ headless: true });
     await newContext();
@@ -197,12 +206,8 @@ async function openReader() {
     await page.locator('#importDlg.open').waitFor();
     await page.locator('#impClose').click();
     await page.locator('#importDlg.open').waitFor({ state: 'hidden' });
-    const imported = await importPdf();
-    pid = imported.id;
-    assert.equal(imported.new, true);
-    assert.equal(pid, expectedId, 'library ID identifies the uploaded fixture bytes');
-    await row().waitFor();
-    await waitText('#count', '1 篇');
+    assert.equal(fs.existsSync(path.join(LIBRARY, pid)), false, 'fixture is not already imported');
+    await importPdf();
     assert.equal(await row().locator('.t1').innerText(), TITLE);
     await row().locator('.pill.unread').waitFor();
     await until(() => disk('job').state === 'done', 'local PDF rendering and extraction', 30000);
@@ -212,11 +217,10 @@ async function openReader() {
     assert.match(fs.readFileSync(path.join(LIBRARY, pid, 'extract', 'page-001.txt'), 'utf8'), /Synthetic page 1/);
     log('PASS: import dialog, generated PDF upload, local extraction, and library listing');
 
-    const duplicate = await importPdf();
-    assert.equal(duplicate.new, false);
-    assert.equal(duplicate.id, pid);
-    await waitText('#count', '1 篇');
-    assert.equal(await page.locator('#list .row').count(), 1, 'repeat import creates no duplicate');
+    const originallyAdded = disk('item').added;
+    await importPdf();
+    assert.equal(disk('item').added, originallyAdded, 'repeat import preserves the existing item');
+    assert.deepEqual(fs.readFileSync(path.join(LIBRARY, pid, 'source.pdf')), pdf);
     await search('Offline Regression', 1);
     await shot('01-library-search');
     await search('missing-fixture-zzzzzz', 0);
