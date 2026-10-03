@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   const C=window.FolioMobile,S=window.FolioStorage,D=window.FolioDrive,$=s=>document.querySelector(s),E=C.esc;
-  let view='library',papers=[],active=null,cloudFiles=[],selection=null,settings={},scrollTimer=0,toastTimer=0;
+  let view='library',papers=[],active=null,cloudFiles=[],selection=null,settings={},scrollTimer=0,toastTimer=0,aiOptions={},aiKey='',aiTask=null;
   const title=data=>(data.item.meta_override || {}).title_zh || data.paper.meta.title_zh || data.paper.meta.title_en || '未命名论文';
   const effectiveMeta=data=>({...data.paper.meta,...data.item.meta_override});
   const notes=data=>Object.values(data.reader.notes || {}).filter(n=>!n.deleted || (n._syncConflicts || []).some(c=>!c.deleted));
@@ -14,34 +14,34 @@
     document.documentElement.style.setProperty('--phone-font',(Number(settings.font)||18)+'px');
     $('meta[name="theme-color"]').content=document.documentElement.dataset.theme==='dark' ? '#2d2d2b':'#f9f9f7';
   }
-  function setView(next) {
+  function setView(next,onlyActive=false) {
     view=next;selection=null;$('#selectionTools').hidden=true;
     if(next!=='reader'){PR.citationReferences=[];PR.refById={};}
     document.body.classList.toggle('reader-mode',view==='reader');
     $('#tabs').innerHTML=view==='reader' ? '<button data-act="toc">目录</button><button data-act="paperNotes">笔记</button><button data-act="find">查找</button>' :
-      ['library','notes','settings'].map((v,i)=>'<button data-view="'+v+'" class="'+(v===view?'active':'')+'">'+['阅读','笔记','设置'][i]+'</button>').join('');
+      ['library','knowledge','notes','settings'].map((v,i)=>'<button data-view="'+v+'" class="'+(v===view?'active':'')+'">'+['文献库','知识库','笔记','设置'][i]+'</button>').join('');
     $('#headerStatus').textContent=view==='reader' ? (active.demo?'界面示例':percent(active)+'% · 已保存') : '随身阅读';
-    if(view==='library') library();if(view==='notes') allNotes();if(view==='settings') preferences();if(view==='reader') renderPaper();
+    if(view==='library') library();if(view==='knowledge') knowledge(onlyActive).catch(error=>toast(error.message));if(view==='notes') allNotes();if(view==='settings') preferences();if(view==='reader') renderPaper();
     window.scrollTo(0,0);
   }
   function library() {
     const recent=papers.slice().sort((a,b)=>C.time(b.opened_at || b.imported_at)-C.time(a.opened_at || a.imported_at));
-    let html='<div class="eyebrow">YOUR READING SPACE</div><h1>随时继续阅读</h1><p class="intro">论文与笔记，带在身边。</p>';
-    if(!recent.length) html+='<section class="empty"><h2>把第一篇论文带到手机</h2><p>从电脑版导出离线阅读文件，再在这里导入。下载到手机后，断网也能阅读和做笔记。</p><div class="actions"><button class="primary" data-act="import">导入论文</button><button class="secondary" data-act="demo">试读示例</button></div></section>';
+    let html='<div class="eyebrow">YOUR SHARED LIBRARY</div><h1>你的文献库</h1><p class="intro">'+(D.connected?'手机与电脑，共用同一个私有云端资料库。':'从手机直接导入 PDF。连接云盘后，与电脑共享资料。')+'</p><div class="actions"><button class="primary" data-act="import">导入论文</button><button class="secondary" data-act="syncLibrary">'+(D.connected?'同步资料库':'连接云盘')+'</button></div>';
+    if(!recent.length) html+='<section class="empty"><h2>从这里加入第一篇论文</h2><p>选择 iPhone「文件」中的 PDF，也可导入已有的阅读 HTML 或 JSON。PDF 在此设备解析，联网并连接云盘后自动上传。</p><button class="secondary" data-act="demo">试读示例</button></section>';
     else {
       const data=recent[0];
       html+='<button class="resume" data-open="'+E(data.paper_id)+'"><div class="eyebrow">继续阅读</div><h2>'+E(title(data))+'</h2><div class="progress"><i style="width:'+percent(data)+'%"></i></div><footer><span>'+percent(data)+'% · '+notes(data).length+' 条批注</span><span>继续 →</span></footer></button>';
-      html+='<input class="search" id="librarySearch" type="search" placeholder="查找你的论文" aria-label="查找论文"><div class="section-label">已下载<span>'+recent.length+' 篇 · 可离线阅读</span></div><div id="paperList">'+cards(recent)+'</div>';
+      html+='<input class="search" id="librarySearch" type="search" placeholder="查找你的论文" aria-label="查找论文"><div class="section-label">此设备可阅读<span>'+recent.length+' 篇 · 离线缓存</span></div><div id="paperList">'+cards(recent)+'</div>';
     }
     const localIds=new Set(papers.map(p=>p.paper_id));
     const ids=[...new Set(cloudFiles.filter(f=>f.appProperties.folioType==='paper').map(f=>f.appProperties.folioPaperId))].filter(id=>!localIds.has(id));
-    if(ids.length) html+='<div class="section-label">云端论文<span>按需下载</span></div>'+ids.map(id=>{
+    if(ids.length) html+='<div class="section-label">共同云端文献库<span>'+ids.length+' 篇 · 正文按需下载</span></div>'+ids.map(id=>{
       const file=D.latest(cloudFiles,id);
       return '<button class="paper-card" data-cloud="'+E(file.id)+'"><h3>'+E(file.name.replace(/\.folio\.json$/,''))+'</h3><div class="meta"><span>Google 云盘</span><span>下载到手机 ↓</span></div></button>';
     }).join('');
     $('#app').innerHTML=html;
   }
-  function cards(list) {return list.map(data=>'<button class="paper-card" data-open="'+E(data.paper_id)+'"><h3>'+E(title(data))+'</h3><div class="meta"><span>'+E(data.paper.meta.authors || '')+'</span><span>'+percent(data)+'% · '+notes(data).length+' 条批注</span></div>'+window.FolioJournal.badges(effectiveMeta(data))+'</button>').join('');}
+  function cards(list) {return list.map(data=>'<button class="paper-card" data-open="'+E(data.paper_id)+'"><h3>'+E(title(data))+'</h3><div class="meta"><span>'+E(data.paper.meta.authors || '')+'</span><span>'+percent(data)+'% · '+notes(data).length+' 条批注</span></div><p class="small muted">'+(data.demo?'界面示例':data.synced_once?'已在云端'+((data.pending || []).length?' · 批注待同步':''):D.connected?'等待同步到云端':'此设备保存 · 连接云盘后上传')+'</p>'+window.FolioJournal.badges(effectiveMeta(data))+'</button>').join('');}
   async function openPaper(id,block) {
     active=await S.update(id,data=>{data.opened_at=new Date().toISOString();});
     setView('reader');
@@ -51,11 +51,11 @@
   const md=(text,block)=>PR.md(text,{sourceLinks:block && block.source_links});
   function textRoot(text,key,lang,block) {return '<div class="textroot '+lang+'" data-key="'+E(key)+'" data-lang="'+lang+'">'+md(text,block)+'</div>';}
   function content(block) {
-    const en=(text,key)=>settings.bilingual && text ? textRoot(text,key,'en',block):'';
+    const en=(text,key)=>settings.bilingual && block.zh && text ? textRoot(text,key,'en',block):'';
     const changed=(active.reader.edits || {})[block.id];
     const zh=changed && !changed.reverted ? changed.zh : block.zh;
-    if(block.type==='heading') return '<h'+(block.level===1?2:3)+'>'+textRoot(zh || block.en,block.id,'zh',block)+'</h'+(block.level===1?2:3)+'>'+en(block.en,block.id);
-    if(block.type==='para' || block.type==='note') return textRoot(zh || block.en,block.id,'zh',block)+en(block.en,block.id);
+    if(block.type==='heading') return '<h'+(block.level===1?2:3)+'>'+(block.num?'<span class="num">'+E(block.num)+' </span>':'')+textRoot(zh || block.en || '',block.id,zh?'zh':'en',block)+'</h'+(block.level===1?2:3)+'>'+en(block.en,block.id);
+    if(block.type==='para' || block.type==='note') return textRoot(zh || block.en,block.id,zh?'zh':'en',block)+en(block.en,block.id);
     if(block.type==='list') {const tag=block.ordered?'ol':'ul';return '<'+tag+'>'+(block.items || []).map((item,i)=>'<li>'+textRoot(item.zh || item.en,block.id+'#'+i,'zh',block)+en(item.en,block.id+'#'+i)+'</li>').join('')+'</'+tag+'>';}
     if(block.type==='math') return '<div class="math">'+PR.tex(block.tex || '',true)+'</div>';
     if(block.type==='figure') {
@@ -75,8 +75,9 @@
     const meta=effectiveMeta(active);
     PR.citationReferences=active.paper.references || [];PR.refById=Object.fromEntries(PR.citationReferences.map(r=>[String(r.id),r]));
     $('#app').innerHTML='<div class="reader-actions"><button data-act="library">← 文献库</button><button data-act="bilingual">'+(settings.bilingual?'仅中文':'原文对照')+'</button><button data-act="original">原页</button><button data-act="type">Aa</button></div>'+
-      '<h1 class="reader-title">'+E(title(active))+'</h1><p class="reader-meta">'+E(meta.authors || '')+' · '+E(meta.page_count || (meta.pages || []).length || '?')+' 页'+(active.demo?' · 简短界面示例，非完整译文':'')+'</p>'+
+      '<h1 class="reader-title">'+E(title(active))+'</h1><p class="reader-meta">'+E(meta.authors || '')+' · '+E(meta.page_count || (meta.pages || []).length || '?')+' 页'+(active.demo?' · 简短界面示例，非完整译文':'')+'</p><div class="actions"><button class="secondary" data-act="translatePaper">翻译为中文</button><button class="secondary" data-act="askPaper">问这篇论文</button></div>'+
       window.FolioJournal.badges(meta)+(window.FolioJournal.visible(meta)?'<details class="journal-panel"><summary>期刊分区与来源</summary>'+window.FolioJournal.details(meta)+'</details>':'')+
+      (meta.text_status==='original'?'<p class="document-status">'+E(meta.extraction_note || 'PDF 原文，可阅读和检索；尚未翻译。')+'</p>':'')+
       '<article id="paper" class="reader-paper">'+active.paper.blocks.map(b=>'<section class="blk" id="b-'+E(b.id)+'" data-block="'+E(b.id)+'">'+(b.page?'<div class="pg">p.'+E(b.page)+'</div>':'')+content(b)+'</section>').join('')+'</article>';
     if(!(active.paper.blocks||[]).some(b=>b.type==='references') && (active.paper.references||[]).length){const block={id:'folio-references',type:'references'};$('#paper').insertAdjacentHTML('beforeend','<section class="blk" id="b-folio-references">'+content(block)+'</section>');}
     applyMarks();
@@ -142,7 +143,7 @@
   }
   function noteEditor(id) {
     const existing=id && active.reader.notes[id];
-    const draft=existing || {...(selection || {}),anchor:(selection || {}).anchor || (active.reader.progress || {}).block || active.paper.blocks[0].id};
+    const draft=existing || {...(selection || {}),anchor:(selection || {}).anchor || (active.reader.progress || {}).block || active.paper.blocks[0]?.id || 'head'};
     selection=null;getSelection().removeAllRanges();$('#selectionTools').hidden=true;
     sheet(existing?'修改注记':'添加注记',(draft.quote?'<blockquote>'+E(draft.quote)+'</blockquote>':'')+'<textarea id="noteBody" rows="5" placeholder="写下你的理解、疑问或想法" aria-label="注记正文">'+E(draft.body || '')+'</textarea><div class="actions"><button class="primary" id="saveNote">保存注记</button>'+(existing?'<button class="secondary" id="deleteNote">删除</button>':'')+'</div>');
     $('#saveNote').onclick=async()=>{
@@ -168,14 +169,17 @@
   function paperNotes() {sheet('这篇论文的批注',noteCards(active)+'<div class="actions"><button class="primary" data-act="addNote">添加段落注记</button></div>');}
   function preferences() {
     $('#app').innerHTML='<div class="eyebrow">MAKE IT YOURS</div><h1>阅读设置</h1><section class="settings-group"><h3>阅读外观</h3><div class="setting-row"><span>字号</span><div><button data-size="-1" aria-label="缩小字号">A−</button> <span id="fontValue">'+settings.font+'</span> <button data-size="1" aria-label="增大字号">A＋</button></div></div><div class="setting-row"><label for="theme">主题</label><select id="theme"><option value="auto">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div></section>'+
-      '<section class="settings-group"><h3>Google 云盘</h3><p id="driveState">'+(D.connected?E(D.account.emailAddress || D.account.displayName)+' · 已连接':'连接后，两端可共享论文和批注。资料保存在你自己的云盘，离线阅读不需要登录。')+'</p><div class="actions"><button class="primary" id="driveLogin">'+(D.connected?'切换账号':'连接 Google 云盘')+'</button><button class="secondary" id="driveSync" '+(!D.connected?'disabled':'')+'>立即同步</button></div><p>云端论文按需下载，不会自动下载整个资料库。模型密钥不参与同步。</p><details><summary class="small muted">Google 授权配置</summary><label for="googleClientId">网页客户端 ID</label><input id="googleClientId" autocapitalize="none" spellcheck="false" placeholder="…apps.googleusercontent.com" value="'+E(settings.googleClientId || '')+'"><button id="saveClient" class="secondary">保存配置</button><p>此 ID 是应用的公开登录标识，不是 API Key。首次接入需要在 Google Cloud 中创建一次。</p></details></section>'+
+      '<section class="settings-group"><h3>Google 云盘</h3><p id="driveState">'+(D.connected?E(D.account.emailAddress || D.account.displayName)+' · 已连接':'连接后，两端可共享论文和批注。资料保存在你自己的云盘，离线阅读不需要登录。')+'</p><div class="actions"><button class="primary" id="driveLogin">'+(D.connected?'切换账号':'连接 Google 云盘')+'</button><button class="secondary" id="driveSync" '+(!D.connected?'disabled':'')+'>立即同步</button></div><p>手机导入的 PDF、正文、译文与知识索引会上传到共同资料库。另一设备的正文与图片按需下载；知识检索使用共同云端索引。模型密钥不参与同步。</p><details><summary class="small muted">Google 授权配置</summary><label for="googleClientId">网页客户端 ID</label><input id="googleClientId" autocapitalize="none" spellcheck="false" placeholder="…apps.googleusercontent.com" value="'+E(settings.googleClientId || '')+'"><button id="saveClient" class="secondary">保存配置</button><p>此 ID 是应用的公开登录标识，不是 API Key。首次接入需要在 Google Cloud 中创建一次。</p></details></section>'+
+      '<section class="settings-group"><h3>手机模型</h3><p>手机可独立翻译和向共同知识库提问。模型请求直接发送到你填写的 API 地址；电脑上的本机模型需要电脑在线且另行配置可访问的接口。</p><label for="phoneModelBase">API 地址</label><input id="phoneModelBase" type="url" value="'+E(aiOptions.base_url || 'https://api.deepseek.com')+'" autocapitalize="none" spellcheck="false"><label for="phoneModelName">模型名称</label><input id="phoneModelName" value="'+E(aiOptions.model || 'deepseek-chat')+'" autocapitalize="none" spellcheck="false"><label for="phoneModelKey">API Key</label><input id="phoneModelKey" type="password" value="'+E(aiKey)+'" autocomplete="off" autocapitalize="none" spellcheck="false"><label class="check-row"><input id="rememberPhoneKey" type="checkbox" '+(aiOptions.remember_key?'checked':'')+'>将密钥保存在此设备</label><p>默认只在本次打开期间使用。勾选后保存在浏览器设备存储中；不上传云盘。</p><button class="secondary" id="savePhoneModel">保存模型配置</button><button class="secondary" id="forgetPhoneKey">清除设备密钥</button></section>'+
       '<section class="settings-group"><h3>离线与备份</h3><p>下载后的论文、图片和批注保存在此设备。清除 Safari 的网站数据会移除本机副本；请先同步或导出备份。</p><div class="actions"><button class="secondary" data-act="backup">导出当前论文</button><button class="secondary" data-act="import">导入阅读文件</button></div><p id="offlineState">正在检查离线阅读资源…</p></section>'+
       '<section class="settings-group"><h3>添加到 iPhone 主屏幕</h3><p class="install-note">用 Safari 打开手机阅读网址，点分享，再选「添加到主屏幕」。第一次下载论文后，离线也能打开阅读。需要 HTTPS 网址。</p></section>';
     $('#theme').value=settings.theme;
     $('#theme').onchange=async e=>{settings.theme=e.target.value;applyAppearance();await S.setting('appearance',settings);};
     $('#saveClient').onclick=async()=>{const id=$('#googleClientId').value.trim();if(!/^[\w.-]+\.apps\.googleusercontent\.com$/.test(id)) return toast('客户端 ID 格式不正确');settings.googleClientId=id;await S.setting('appearance',settings);D.loadIdentity().catch(()=>{});toast('Google 登录配置已保存');};
-    $('#driveLogin').onclick=async()=>{try {await D.login(settings.googleClientId);cloudFiles=await D.list();preferences();toast('Google 云盘已连接');}catch(error){toast(error.message);}};
-    $('#driveSync').onclick=async()=>{try{$('#driveSync').disabled=true;cloudFiles=await D.syncAll((i,n)=>{$('#driveState').textContent='正在同步 '+i+' / '+n+' 篇';});papers=await S.all();if(active) active=await S.get(active.paper_id);preferences();toast('同步完成');}catch(error){preferences();toast(error.message);}};
+    $('#savePhoneModel').onclick=async()=>{try{const base=$('#phoneModelBase').value.trim(),url=new URL(base);if(url.protocol!=='https:' || url.username || url.password || url.search || url.hash)throw new Error('请使用 HTTPS 模型 API 地址');aiKey=$('#phoneModelKey').value.trim();aiOptions={base_url:base.replace(/\/$/,''),model:$('#phoneModelName').value.trim(),remember_key:$('#rememberPhoneKey').checked};await S.setting('aiOptions',aiOptions);await S.setting('aiKey',aiOptions.remember_key?aiKey:'');window.FolioAI.setConfig({...aiOptions,api_key:aiKey});toast('手机模型配置已保存');}catch(error){toast(error.message);}};
+    $('#forgetPhoneKey').onclick=async()=>{aiKey='';await S.setting('aiKey','');window.FolioAI.setConfig({api_key:''});$('#phoneModelKey').value='';toast('设备密钥已清除');};
+    $('#driveLogin').onclick=async()=>{try {await D.login(settings.googleClientId);cloudFiles=await D.syncAll();papers=await S.all();preferences();toast('Google 云盘已连接，共同资料库已同步');}catch(error){toast(error.message);}};
+    $('#driveSync').onclick=async()=>{try{if(aiTask)throw new Error('请先完成或停止模型任务。');$('#driveSync').disabled=true;cloudFiles=await D.syncAll((i,n)=>{if($('#driveState'))$('#driveState').textContent='正在同步 '+i+' / '+n+' 篇';});papers=await S.all();if(active) active=await S.get(active.paper_id);preferences();toast('同步完成');}catch(error){preferences();toast(error.message);}};
     if(settings.googleClientId && navigator.onLine) D.loadIdentity().catch(()=>{});
     offlineStatus();
   }
@@ -186,10 +190,96 @@
     el.textContent=registration && registration.active?'离线启动资源已就绪。':'离线启动资源正在准备，请稍后重新打开。';
   }
   async function importFile(file) {
-    if(file.size>C.MAX_BYTES) throw new Error('阅读文件超过 64 MB。');
-    const data=C.parseImport(await file.text());
-    await S.importBundle(data);papers=await S.all();await openPaper(data.paper_id);toast('论文已下载到设备，可离线阅读');
+    $('#importButton').disabled=true;
+    try {
+      let data;
+      if(/\.pdf$/i.test(file.name) || file.type==='application/pdf') {
+        toast('正在在此设备解析 PDF…');
+        data=await window.FolioPDF.parse(file,(n,total)=>{$('#headerStatus').textContent='解析 '+n+' / '+total+' 页';});
+        if(new TextEncoder().encode(JSON.stringify(data)).length>C.MAX_BYTES)throw new Error('阅读副本超过 64 MB，请拆分或压缩 PDF。');
+        await S.source(data.paper_id,{blob:file,name:file.name});
+      } else {
+        if(file.size>C.MAX_BYTES) throw new Error('阅读文件超过 64 MB。');
+        data=C.parseImport(await file.text());
+      }
+      await S.importBundle(data);papers=await S.all();await openPaper(data.paper_id);toast('论文已导入，原稿与阅读内容保存在此设备');
+      if(D.connected && navigator.onLine) {cloudFiles=await D.syncAll();papers=await S.all();active=await S.get(data.paper_id);toast('已上传到共同云端资料库，电脑同步后即可看到');}
+    } finally {$('#importButton').disabled=false;}
     if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
+  }
+  async function corpus(onlyActive=false) {
+    const local=await S.all(),cached=await S.indexes(),account=D.account?.permissionId;
+    const map=new Map();
+    for(const data of cached)if(!account || data.bound_account===account)map.set(data.paper_id,data);
+    for(const data of local) {
+      if(data.demo || (account && data.bound_account && data.bound_account!==account))continue;
+      const remote=map.get(data.paper_id);
+      map.set(data.paper_id,remote?{...data,reader:C.materialize([remote.reader,data.reader],data.pending || [])}:data);
+    }
+    return [...map.values()].filter(data=>!onlyActive || data.paper_id===active?.paper_id);
+  }
+  async function knowledge(onlyActive=false) {
+    const data=await corpus(onlyActive);if(view!=='knowledge')return;
+    $('#app').innerHTML='<div class="eyebrow">YOUR SHARED KNOWLEDGE</div><h1>'+(onlyActive?'问这篇论文':'问共同资料库')+'</h1><p class="intro">'+data.length+' 篇资料已就绪。回答优先引用你的论文，库外补充单独标出。</p><label for="knowledgeQuestion" class="small">你想了解什么？</label><textarea id="knowledgeQuestion" rows="4" placeholder="例如：这些研究采用了哪些土地覆盖变化检测方法？"></textarea><label class="check-row"><input type="checkbox" id="knowledgeNotes" checked>包含我的笔记</label><label class="check-row"><input type="checkbox" id="knowledgeGeneral" checked>资料不足时，允许明确标出的库外补充</label><div class="actions"><button class="secondary" id="knowledgeSearch">检索资料</button><button class="primary" id="knowledgeAsk">向 AI 提问</button><button class="secondary" id="knowledgeStop" hidden>停止</button></div><p id="knowledgeState" class="small muted"></p><section id="knowledgeAnswer"></section><section id="knowledgeSources"></section>';
+    const retrieve=async()=>{
+      const query=$('#knowledgeQuestion').value.trim();if(!query)throw new Error('请填写问题或检索关键词。');
+      const data=await corpus(onlyActive),result=window.FolioKnowledge.retrieve(data,query,$('#knowledgeNotes').checked);
+      $('#knowledgeState').textContent='检索 '+result.papers+' 篇资料 · '+result.passages+' 段正文和笔记 · 命中 '+result.matched_papers+' 篇';
+      $('#knowledgeSources').innerHTML='<h2>资料库来源</h2>'+(result.sources.length?result.sources.map(s=>'<article class="knowledge-source"><button class="source-link" data-knowledge-paper="'+E(s.paper_id)+'" data-knowledge-block="'+E(s.block)+'">['+s.id+'] '+E(s.title)+' · '+(s.page?'原文第 '+E(s.page)+' 页':'论文笔记')+'</button><p>'+E(s.text)+'</p></article>').join(''):'<p class="muted">没有匹配的资料。可换用论文中的关键词；英文原文可用英文关键词检索。</p>');
+      return {query,result};
+    };
+    $('#knowledgeSearch').onclick=async()=>{try{await retrieve();}catch(error){toast(error.message);}};
+    $('#knowledgeAsk').onclick=async()=>{
+      if(aiTask)return toast('请先完成或停止当前模型任务。');
+      if(!window.FolioAI.configured)return toast('请先在设置中配置手机使用的模型 API。');
+      const controller=new AbortController();aiTask=controller;
+      $('#knowledgeAsk').disabled=true;$('#knowledgeStop').hidden=false;$('#knowledgeState').textContent='正在检索资料…';
+      try {
+        const {query,result}=await retrieve();
+        // 中英文提问可先转换检索词，正文仍以云端真实证据为准。
+        if(result.sources.length<3 && /[\u4e00-\u9fff]/.test(query)) {
+          const keywords=await window.FolioAI.chat([{role:'system',content:'将用户问题提炼为用于科学论文检索的 4 到 8 个英文关键词，只返回关键词，不回答问题。'}, {role:'user',content:query}],controller.signal);
+          const expanded=window.FolioKnowledge.retrieve(await corpus(onlyActive),query+' '+keywords.slice(0,600),$('#knowledgeNotes').checked);
+          if(expanded.sources.length>result.sources.length){result.sources=expanded.sources;result.matched_papers=expanded.matched_papers;}
+        }
+        $('#knowledgeState').textContent='正在根据 '+result.sources.length+' 段资料生成回答…';
+        const answer=await window.FolioAI.answer(query,result,$('#knowledgeGeneral').checked,controller.signal);
+        if(view!=='knowledge')return;
+        $('#knowledgeAnswer').innerHTML='<div class="answer-library"><h2>来自你的资料库</h2>'+PR.mdBlocks(answer.answer_from_library)+'</div>'+(answer.outside_knowledge?'<div class="answer-outside"><h2>库外补充</h2><p class="small muted">以下内容是模型的通用知识补充，未经这些论文支持。</p>'+PR.mdBlocks(answer.outside_knowledge)+'</div>':'');
+        $('#knowledgeSources').innerHTML='<h2>本次使用的资料</h2>'+result.sources.map(s=>'<article class="knowledge-source"><button class="source-link" data-knowledge-paper="'+E(s.paper_id)+'" data-knowledge-block="'+E(s.block)+'">['+s.id+'] '+E(s.title)+' · '+(s.page?'p.'+E(s.page):'笔记')+'</button><p>'+E(s.text)+'</p></article>').join('');
+        $('#knowledgeState').textContent='已检索 '+result.papers+' 篇；回答附有可回到原文的来源。';
+      } catch(error){toast(error.message);}finally{aiTask=null;if($('#knowledgeAsk')){$('#knowledgeAsk').disabled=false;$('#knowledgeStop').hidden=true;}}
+    };
+    $('#knowledgeStop').onclick=()=>aiTask?.abort();
+  }
+  async function translatePaper() {
+    if(aiTask || D.syncing)throw new Error('请等当前任务结束后再翻译。');
+    if(!window.FolioAI.configured)throw new Error('请先在手机设置中配置模型 API。');
+    const id=active.paper_id,remaining=active.paper.blocks.filter(b=>b.en && !b.zh && ['heading','para','note'].includes(b.type));
+    if(!remaining.length)return toast('没有待翻译的原文段落。');
+    sheet('翻译为中文','<p>将未翻译的正文发送给你配置的模型服务。已完成的段落分批保存，可中止后继续。</p><p id="translationState" role="status">共 '+remaining.length+' 个段落</p><div class="actions"><button class="primary" id="startMobileTranslation">开始翻译</button><button class="secondary" id="stopMobileTranslation" hidden>停止</button></div>');
+    $('#startMobileTranslation').onclick=async()=>{
+      const controller=new AbortController();aiTask=controller;$('#startMobileTranslation').disabled=true;$('#stopMobileTranslation').hidden=false;
+      try {
+        let done=0;
+        for(let i=0;i<remaining.length;) {
+          const batch=[];let size=0;
+          while(i<remaining.length && (size<4500 || !batch.length)){const block=remaining[i++];batch.push(block);size+=block.en.length;}
+          if($('#translationState'))$('#translationState').textContent='已完成 '+done+' / '+remaining.length+' 段';
+          const translated=await window.FolioAI.translate(batch,controller.signal);
+          await S.update(id,data=>{for(const result of translated){const block=data.paper.blocks.find(b=>b.id===result.id);if(block && !block.zh)block.zh=result.zh;}
+            const pages=[...new Set(data.paper.blocks.map(b=>b.page).filter(Boolean))];
+            data.paper.translation={done_pages:pages.filter(page=>data.paper.blocks.filter(b=>b.page===page&&b.en&&['heading','para','note'].includes(b.type)).every(b=>b.zh)),note:'由手机分批翻译'};
+            data.content_dirty=true;});
+          done+=batch.length;
+        }
+        active=await S.update(id,data=>{data.paper.meta.text_status='translated';data.paper.meta.extraction_note='';data.content_dirty=true;});
+        settings.bilingual=true;await S.setting('appearance',settings);closeSheet();renderPaper();toast('译文已保存，准备同步到云端');
+      } catch(error){active=await S.get(id);toast(error.message);if($('#translationState'))$('#translationState').textContent='已完成的段落已经保存。重新打开翻译可继续未完成部分。';}
+      finally{aiTask=null;if($('#startMobileTranslation')){$('#startMobileTranslation').disabled=false;$('#stopMobileTranslation').hidden=true;}}
+      if(D.connected && navigator.onLine)try{cloudFiles=await D.syncAll();active=await S.get(id);toast('译文已同步，另一设备同步后即可读取');}catch(error){toast(error.message);}
+    };
+    $('#stopMobileTranslation').onclick=()=>aiTask?.abort();
   }
   async function demo() {
     const data=C.normalize({paper_id:'demo-mobile',paper:{meta:{title_zh:'[示例] 注意力机制：从一篇论文开始',title_en:'Attention Is All You Need',authors:'Vaswani 等',arxiv:'1706.03762',page_count:15,pages:[]},blocks:[
@@ -206,6 +296,17 @@
     const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:'application/json'}));
     const link=document.createElement('a');link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
   }
+  function outline() {
+    const headings=active.paper.blocks.filter(b=>b.type==='heading'||b.type==='references');
+    if(!headings.some(b=>b.type==='references') && active.paper.references.length)headings.push({id:'folio-references',type:'references'});
+    const tree=window.FolioOutline.build(headings,b=>PR.plain(b.zh || b.en || ''));
+    const blocks=[...document.querySelectorAll('#paper .blk')],index=blocks.findIndex(b=>b.getBoundingClientRect().bottom>90);
+    let current=null;
+    for(const block of blocks.slice(0,Math.max(0,index)+1)){if(tree.byId[block.dataset.block])current=tree.byId[block.dataset.block];}
+    const row=node=>'<button class="toc-item'+(node===current?' current':'')+'" '+(node===current?'aria-current="location" ':'')+'data-jump="'+E(node.id)+'" data-paper="'+E(active.paper_id)+'"><span>'+E((node.num?node.num+' ':'')+node.title)+'</span><small>'+(node.page?'p.'+E(node.page):'')+'</small></button>';
+    const branch=nodes=>'<ul class="toc-tree">'+nodes.map(node=>'<li>'+(node.children.length?'<details open><summary>'+row(node)+'</summary>'+branch(node.children)+'</details>':row(node))+'</li>').join('')+'</ul>';
+    sheet('文章目录',tree.roots.length?'<p class="muted small">按章节层级整理，重复标题已合并。点箭头收起子章节。</p>'+branch(tree.roots):'<p class="muted">这篇论文还没有章节目录。</p>');
+  }
   document.addEventListener('click',async e=>{
     try {
       const cite=e.target.closest('a.cite');if(cite){
@@ -217,7 +318,12 @@
       }
       const refJump=e.target.closest('[data-ref-jump]');if(refJump){const el=document.getElementById('ref-'+refJump.dataset.refJump);closeSheet();if(el)el.scrollIntoView({block:'center'});else toast('文末参考文献列表尚未生成');return;}
       const refCopy=e.target.closest('[data-ref-copy]');if(refCopy){try{await navigator.clipboard.writeText(PR.refById[refCopy.dataset.refCopy].text);toast('参考文献已复制');}catch(_){toast('请长按条目文字复制');}return;}
-      const viewButton=e.target.closest('[data-view]');if(viewButton) {papers=await S.all();return setView(viewButton.dataset.view);}
+      const viewButton=e.target.closest('[data-view]');if(viewButton) {if(aiTask)return toast('请先完成或停止当前模型任务。');papers=await S.all();return setView(viewButton.dataset.view);}
+      const knowledgeSource=e.target.closest('[data-knowledge-paper]');if(knowledgeSource){
+        const id=knowledgeSource.dataset.knowledgePaper;
+        if(!await S.get(id)){let file=D.latest(cloudFiles,id);if(!file){cloudFiles=await D.list();file=D.latest(cloudFiles,id);}if(!file)throw new Error('来源论文暂未在云端找到，请重新同步。');await S.save(await D.getPaper(file,cloudFiles));}
+        return openPaper(id,knowledgeSource.dataset.knowledgeBlock);
+      }
       const open=e.target.closest('[data-open]');if(open) return openPaper(open.dataset.open);
       const remote=e.target.closest('[data-cloud]');if(remote) {remote.disabled=true;const file=cloudFiles.find(f=>f.id===remote.dataset.cloud);const data=await D.getPaper(file,cloudFiles);await S.save(data);papers=await S.all();await openPaper(data.paper_id);return toast('论文已下载，可离线阅读');}
       const size=e.target.closest('[data-size]');if(size) {settings.font=Math.max(15,Math.min(26,Number(settings.font)+Number(size.dataset.size)));applyAppearance();await S.setting('appearance',settings);if($('#fontValue')) $('#fontValue').textContent=settings.font;return;}
@@ -228,22 +334,28 @@
       const image=e.target.closest('[data-image]');if(image) return sheet('论文插图','<img class="original-page" alt="论文插图" src="'+E(active.images[image.dataset.image])+'">');
       const act=e.target.closest('[data-act]');if(!act) return;
       if(act.dataset.act==='import') $('#importFile').click();
+      if(act.dataset.act==='translatePaper') return translatePaper();
+      if(act.dataset.act==='askPaper') return setView('knowledge',true);
+      if(act.dataset.act==='syncLibrary') {if(aiTask)throw new Error('请先完成或停止模型任务。');if(!D.connected)return setView('settings');toast('正在同步资料库…');cloudFiles=await D.syncAll();papers=await S.all();library();toast('资料库已同步');}
       if(act.dataset.act==='demo') await demo();
       if(act.dataset.act==='library') {papers=await S.all();setView('library');}
       if(act.dataset.act==='paperNotes') paperNotes();
       if(act.dataset.act==='addNote') {closeSheet();noteEditor();}
       if(act.dataset.act==='bilingual') {settings.bilingual=!settings.bilingual;await S.setting('appearance',settings);renderPaper();}
       if(act.dataset.act==='type') sheet('字号与主题','<div class="setting-row"><span>字号</span><div><button data-size="-1">A−</button> <span id="fontValue">'+settings.font+'</span> <button data-size="1">A＋</button></div></div><p class="muted small">主题可以在设置中选择浅色、深色或跟随系统。</p>');
-      if(act.dataset.act==='toc') sheet('文章目录',active.paper.blocks.filter(b=>b.type==='heading').map(b=>'<button class="toc-item" data-jump="'+E(b.id)+'" data-paper="'+E(active.paper_id)+'">'+E(b.zh || b.en)+'</button>').join('') || '<p class="muted">这篇论文还没有章节目录。</p>');
-      if(act.dataset.act==='original') {const pages=active.paper.meta.pages || [];sheet('原文页面',pages.filter(p=>active.images[p.img]).map(p=>'<p class="muted small">第 '+E(p.n)+' 页</p><img class="original-page" src="'+E(active.images[p.img])+'" alt="原文第 '+E(p.n)+' 页" loading="lazy">').join('') || '<p class="muted">此阅读文件不包含原页图片。请从电脑版导出完整离线阅读文件。</p>');}
+      if(act.dataset.act==='toc') outline();
+      if(act.dataset.act==='original') {
+        const pages=active.paper.meta.pages || [];sheet('原文页面','<div id="sourcePDF"><button class="secondary" id="loadSourcePDF">打开完整 PDF</button></div>'+ (pages.filter(p=>active.images[p.img]).map(p=>'<p class="muted small">第 '+E(p.n)+' 页</p><img class="original-page" src="'+E(active.images[p.img])+'" alt="原文第 '+E(p.n)+' 页" loading="lazy">').join('') || '<p class="muted">可从云盘取得完整 PDF，或使用有原稿的设备再同步一次。</p>'));
+        $('#loadSourcePDF').onclick=async()=>{try{const source=await D.sourceFor(active.paper_id,cloudFiles),url=URL.createObjectURL(source.blob);$('#sourcePDF').innerHTML='<a class="secondary" target="_blank" rel="noopener" href="'+E(url)+'">查看完整 PDF ↗</a>';setTimeout(()=>URL.revokeObjectURL(url),300000);}catch(error){toast(error.message);}};
+      }
       if(act.dataset.act==='backup') {if(!active) return toast('先打开一篇论文，再导出阅读文件');downloadJson(C.normalize(active),title(active).replace(/[\\/:*?"<>|]/g,'')+'.folio.json');toast('已导出论文与当前批注');}
       if(act.dataset.act==='find') {sheet('查找正文','<input id="findInput" type="search" class="search" placeholder="输入关键词" aria-label="查找关键词"><div id="findResults"></div>');$('#findInput').oninput=()=>{const query=$('#findInput').value.trim().toLowerCase();$('#findResults').innerHTML=query?active.paper.blocks.filter(b=>JSON.stringify(b).toLowerCase().includes(query)).map(b=>'<button class="find-match" data-jump="'+E(b.id)+'" data-paper="'+E(active.paper_id)+'">'+E(PR.plain(b.zh || b.caption_zh || b.en || '').slice(0,120))+'<small>p.'+E(b.page || '?')+'</small></button>').join('') || '<p class="muted">没有找到相关文字。</p>':'';};$('#findInput').focus();}
     } catch(error) {toast(error.message);}
   });
-  $('#home').onclick=e=>{e.preventDefault();S.all().then(data=>{papers=data;setView('library');}).catch(error=>toast(error.message));};
+  $('#home').onclick=e=>{e.preventDefault();if(aiTask)return toast('请先完成或停止模型任务。');S.all().then(data=>{papers=data;setView('library');}).catch(error=>toast(error.message));};
   $('#importButton').onclick=()=>$('#importFile').click();
   $('#importFile').onchange=async e=>{const file=e.target.files[0];if(file) {try{await importFile(file);}catch(error){toast(error.message);}}e.target.value='';};
-  $('#sheetClose').onclick=closeSheet;
+  $('#sheetClose').onclick=()=>{if(aiTask && $('#translationState'))aiTask.abort();closeSheet();};
   $('#selectionTools').onpointerdown=e=>e.preventDefault();
   $('#selectionNote').onclick=()=>noteEditor();
   $('#selectionCancel').onclick=()=>{selection=null;getSelection().removeAllRanges();$('#selectionTools').hidden=true;};
@@ -260,7 +372,7 @@
   },{passive:true});
   window.addEventListener('online',()=>toast('已联网，可以连接 Google 云盘并同步批注'));
   setInterval(async()=>{
-    if(!D.connected || D.syncing || !navigator.onLine || document.hidden) return;
+    if(!D.connected || D.syncing || aiTask || !navigator.onLine || document.hidden) return;
     try{cloudFiles=await D.syncAll();papers=await S.all();
       if(view==='library')library();
       if(view==='reader' && active && getSelection().isCollapsed && !$('#sheet').open){
@@ -272,6 +384,7 @@
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyAppearance);
   (async()=>{
     settings={theme:'auto',font:18,bilingual:false,...await S.setting('appearance')};
+    aiOptions=await S.setting('aiOptions') || {};aiKey=aiOptions.remember_key?(await S.setting('aiKey') || ''):'';window.FolioAI.setConfig({...aiOptions,api_key:aiKey});
     if(!settings.googleClientId) {
       const config=await fetch('./config.json').then(r=>r.ok?r.json():{}).catch(()=>({}));
       if(config.google_web_client_id) settings.googleClientId=config.google_web_client_id;

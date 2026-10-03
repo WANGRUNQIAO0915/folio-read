@@ -13,15 +13,16 @@
   }
   function emptyReader() { return {schema:2,rev:0,edits:{},notes:{},paper_note:{},progress:{}}; }
   const FIELDS = {
-    meta:'title_zh title_en short_zh authors affiliation year date venue arxiv url doi page_count source_sha256 abstract_en source pages pdf',
-    block:'id type level zh en page role ordered items tex tag src caption_zh caption_en head rows source_links',
+    meta:'title_zh title_en short_zh authors affiliation year date venue arxiv url doi page_count source_sha256 abstract_en source pages pdf text_status extraction_note',
+    block:'id type level num appendix zh en page role ordered items tex tag src caption_zh caption_en head rows source_links',
     note:'id anchor key quote prefix suffix segments lang root_index kind color style body created updated deleted _syncConflicts',
     segment:'anchor key quote prefix suffix lang root_index',
     edit:'zh base at reverted prev',
     item:'tags status starred rating meta_override added updated last_opened archived status_manual',
     link:'url label page rect',
     reference:'id text url doi',
-    entry:'id anchor quote kind title q body at updated reply_to'
+    entry:'id anchor quote kind title q body at updated reply_to',
+    translation:'done_pages note'
   };
   function pick(value,kind) {
     const out={};
@@ -64,6 +65,10 @@
       if(Array.isArray(out.items)) out.items=out.items.map(i=>({zh:i.zh || '',en:i.en || ''}));
       if(Array.isArray(out.source_links)) out.source_links=out.source_links.map(l=>pick(l,'link'));return out;});
     const paper={schema:2,meta,blocks,references:(input.paper.references || []).map(r=>pick(r,'reference'))};
+    if(input.paper.translation && typeof input.paper.translation==='object') {
+      paper.translation=pick(input.paper.translation,'translation');
+      paper.translation.done_pages=[...new Set((input.paper.translation.done_pages || []).filter(p=>Number.isInteger(p)&&p>0&&p<=10000))].sort((a,b)=>a-b);
+    }
     const item=pick(input.item,'item');if(item.meta_override) item.meta_override=pick(item.meta_override,'meta');
     return {schema:1,kind:'folio-mobile-paper',paper_id:id,paper,reader:cleanReader(input.reader || {}),
       discussion:{entries:(input.discussion?.entries || []).map(e=>pick(e,'entry'))},item,images,
