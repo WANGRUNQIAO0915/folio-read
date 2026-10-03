@@ -189,6 +189,18 @@ async function openReader() {
   assert.ok(disk('item').last_opened, 'opening the reader persists last_opened');
 }
 
+async function backToLibrary() {
+  // workspace.css intentionally hides the legacy #backBtn. Exercise the
+  // visible global navigation introduced by the current reader layout.
+  const link = page.getByRole('navigation', { name: '主导航' })
+    .getByRole('link', { name: '文献库', exact: true });
+  assert.equal(await link.getAttribute('href'), '/');
+  await link.click();
+  await page.waitForURL(url + '/');
+  await row().waitFor();
+  assert.equal(await link.getAttribute('aria-current'), 'page', 'library navigation becomes active');
+}
+
 (async () => {
   try {
     execFileSync(PYTHON, [SUPPORT, 'fixture', PDF], { cwd: TEMP, env });
@@ -244,8 +256,7 @@ async function openReader() {
     await shot('04-reader-page-two');
     await page.locator('[data-pv="close"]').click();
     await page.locator('body.pv-open').waitFor({ state: 'hidden' });
-    await page.locator('#backBtn').click();
-    await page.waitForURL(url + '/');
+    await backToLibrary();
     await row().locator('.pill.reading').waitFor();
     await setStatus('done', '已读');
     log('PASS: reader navigation, actual PDF images, page controls, and reading-status saves');
@@ -265,7 +276,7 @@ async function openReader() {
     await waitText('#count', '1 篇');
     await openReader();
     await shot('05-reader-after-restart');
-    await page.locator('#backBtn').click();
+    await backToLibrary();
     await row().locator('.pill.done').waitFor();
     assert.equal(disk('item').status, 'done', 'completed status survives reopening the reader');
     await shot('06-library-after-restart');
