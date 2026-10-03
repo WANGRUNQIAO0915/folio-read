@@ -64,6 +64,42 @@
     return (await request('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime,appProperties',{
       method:'POST',headers:{'Content-Type':'multipart/related; boundary='+boundary},body})).json();
   }
+  async function uploadSource(source,pid,parent) {
+    const blob=source.blob;
+    if(!blob || blob.size>128*1024*1024)throw new Error('原始 PDF 缺失或超过 128 MB。');
+    const original=new Uint8Array(await blob.arrayBuffer());
+    const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',original))].map(x=>x.toString(16).padStart(2,'0')).join('');
+    if(digest!==pid || !new TextDecoder().decode(original.slice(0,1024)).includes('%PDF-'))throw new Error('原始 PDF 与论文标识不一致，请重新导入。');
+    const meta={name:source.name || '论文.pdf',mimeType:'application/pdf',parents:[parent],appProperties:{folioApp:'mobile-v1',folioType:'source',folioPaperId:pid}};
+    const begin=await request('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,modifiedTime,size,appProperties',{
+      method:'POST',headers:{'Content-Type':'application/json','X-Upload-Content-Type':'application/pdf','X-Upload-Content-Length':String(blob.size)},body:JSON.stringify(meta)});
+    const session=begin.headers.get('Location');
+    if(!session || !session.startsWith('https://www.googleapis.com/upload/drive/'))throw new Error('云盘上传会话无效。');
+    let offset=0,retries=0;
+    while(offset<blob.size) {
+      const end=Math.min(blob.size,offset+4*1024*1024);
+      try {
+        const response=await fetch(session,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/pdf','Content-Range':'bytes '+offset+'-'+(end-1)+'/'+blob.size},body:blob.slice(offset,end)});
+        if(response.ok)return response.json();
+        if(response.status===308) {const range=response.headers.get('Range'),next=range?Number(range.split('-').pop())+1:0;if(next<=offset || next>blob.size)throw new Error('云盘未确认本段上传，请重试。');offset=next;retries=0;continue;}
+        if(response.status===401){token='';throw new Error('Google 登录已过期，请重新连接后重试。');}
+        throw new Error('PDF 上传未完成（'+response.status+'），本机原稿仍然保留。');
+      } catch(error) {
+        if(!token || ++retries>2)throw error;
+        const probe=await fetch(session,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Range':'bytes */'+blob.size}});
+        if(probe.ok)return probe.json();
+        if(probe.status!==308)throw error;
+        const range=probe.headers.get('Range');offset=range?Number(range.split('-').pop())+1:0;
+      }
+    }
+    throw new Error('PDF 上传未得到完成确认，请重试。');
+  }
+  async function hashValue(value) {
+    const bytes=new TextEncoder().encode(C.canonical(value));
+    return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(x=>x.toString(16).padStart(2,'0')).join('');
+  }
+  const contentHash=data=>hashValue({paper:data.paper,images:data.images,discussion:data.discussion,
+    item:Object.fromEntries(['tags','status','starred','rating','meta_override'].filter(k=>Object.hasOwn(data.item || {},k)).map(k=>[k,data.item[k]]))});
   async function folder(files) {
     const existing=files.filter(f=>f.appProperties.folioType==='folder').sort((a,b)=>a.id.localeCompare(b.id))[0];
     if(existing) return existing.id;
@@ -79,7 +115,36 @@
   }
   function latest(files,id) {
     return files.filter(f=>f.appProperties.folioType==='paper' && f.appProperties.folioPaperId===id)
-      .sort((a,b)=>C.time(b.modifiedTime)-C.time(a.modifiedTime) || a.id.localeCompare(b.id))[0];
+      .sort((a,b)=>C.time(b.modifiedTime)-C.time(a.modifiedTime) || b.id.localeCompare(a.id))[0];
+  }
+  function latestKind(files,id,kind) {
+    return files.filter(f=>f.appProperties.folioType===kind && f.appProperties.folioPaperId===id)
+      .sort((a,b)=>C.time(b.modifiedTime)-C.time(a.modifiedTime) || b.id.localeCompare(a.id))[0];
+  }
+  async function sourceFor(pid,files) {
+    const local=await S.source(pid);if(local?.blob)return local;
+    const file=latestKind(files || await list(),pid,'source');
+    if(!file)throw new Error('云端还没有这篇论文的原始 PDF，请在有原稿的设备同步一次。');
+    if(Number(file.size)>128*1024*1024 || !/^[\w-]+$/.test(file.id))throw new Error('云端 PDF 无效或过大。');
+    const blob=await (await request(API+'/'+file.id+'?alt=media')).blob();
+    if(blob.size>128*1024*1024)throw new Error('云端 PDF 超过 128 MB。');
+    const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))].map(x=>x.toString(16).padStart(2,'0')).join('');
+    if(hash!==pid)throw new Error('云端 PDF 校验失败，请保留文件并重新同步。');
+    const source={blob,name:file.name,bound_account:account.permissionId};await S.source(pid,source);return source;
+  }
+  async function indexes(files) {
+    if(!S.saveIndex)return [];
+    const ids=[...new Set(files.filter(f=>f.appProperties.folioType==='index').map(f=>f.appProperties.folioPaperId))];
+    const cached=await S.indexes();
+    for(const id of ids) {
+      const file=latestKind(files,id,'index'),prior=cached.find(x=>x.paper_id===id && x.bound_account===account.permissionId);
+      const data=prior?.cloud_file_id===file.id ? prior:C.normalize(await download(file));
+      if(data.paper_id!==id)throw new Error('云端知识索引标识不匹配。');
+      data.cloud_file_id=file.id;data.bound_account=account.permissionId;
+      // 阅读进度与批注使用事件日志合并，不依赖索引上传顺序。
+      data.reader=C.materialize([data.reader],await opsFor(files,id));await S.saveIndex(data);
+    }
+    return (await S.indexes()).filter(d=>d.bound_account===account.permissionId);
   }
   async function opsFor(files,id) {
     const cacheKey='drive-op-cache:'+account.permissionId;
@@ -99,16 +164,26 @@
     const data=C.normalize(await download(file));
     if(data.paper_id!==file.appProperties.folioPaperId) throw new Error('云盘论文标识不匹配。');
     data.reader=C.materialize([data.reader],await opsFor(files,data.paper_id));
-    data.bound_account=account.permissionId;data.pending=[];data.synced_once=true;data.cloud_file_id=file.id;
+    data.bound_account=account.permissionId;data.pending=[];data.synced_once=true;data.cloud_file_id=file.id;data.cloud_content_hash=await contentHash(data);
     return data;
   }
   async function syncPaper(data,files,deviceId) {
     if(data.bound_account && data.bound_account!==account.permissionId) throw new Error('这篇论文已绑定其他 Google 账号，请切回原账号后同步。');
     let remoteFile=latest(files,data.paper_id);
     const parent=await folder(files);
-    if(!remoteFile) {
-      const bundle=C.normalize(data);
-      remoteFile=await upload((bundle.paper.meta.short_zh || bundle.paper.meta.title_zh || '论文').slice(0,60)+'.folio.json',bundle,{folioType:'paper',folioPaperId:data.paper_id},parent);
+    const source=S.source && await S.source(data.paper_id);
+    if(source?.blob && !latestKind(files,data.paper_id,'source')) {
+      if(source.bound_account && source.bound_account!==account.permissionId)throw new Error('原始 PDF 属于另一 Google 账号。');
+      const saved=await uploadSource(source,data.paper_id,parent);files.push(saved);
+      await S.source(data.paper_id,{...source,bound_account:account.permissionId});
+    }
+    const bundle=C.normalize(data),hash=await contentHash(bundle);
+    if(!remoteFile || data.content_dirty || (data.cloud_content_hash && hash!==data.cloud_content_hash)) {
+      // 并发内容修改不覆盖另一端：本机修订通过批注事件继续同步。
+      if(remoteFile && data.cloud_content_hash && remoteFile.appProperties.folioContent && remoteFile.appProperties.folioContent!==data.cloud_content_hash && data.paper.meta.text_status==='original') {
+        throw new Error('另一端已更新正文，请先下载最新版后再修改正文。原稿和批注仍然保留。');
+      }
+      remoteFile=await upload((bundle.paper.meta.short_zh || bundle.paper.meta.title_zh || bundle.paper.meta.title_en || '论文').slice(0,60)+'.folio.json',bundle,{folioType:'paper',folioPaperId:data.paper_id,folioContent:hash},parent);
       files.push(remoteFile);
     }
     const initial=data.synced_once ? []:C.readerEvents(data.reader,deviceId);
@@ -120,13 +195,20 @@
       files.push(entry);
     }
     // Refresh after upload: concurrent records are merged instead of replacing a cloud JSON.
-    const fresh=await list(), bundle=await getPaper(latest(fresh,data.paper_id),fresh);
-    const reader=C.materialize([data.reader,bundle.reader],await opsFor(fresh,data.paper_id));
+    const fresh=await list(), remoteBundle=await getPaper(latest(fresh,data.paper_id),fresh);
+    const reader=C.materialize([data.reader,remoteBundle.reader],await opsFor(fresh,data.paper_id));
+    const index={...C.normalize({...remoteBundle,reader}),images:{}};
+    index.reader.progress={block:null,ratio:0,at:''};
+    const indexHash=await hashValue(index),priorIndex=latestKind(fresh,data.paper_id,'index');
+    if(!priorIndex || priorIndex.appProperties.folioContent!==indexHash) {
+      const file=await upload((index.paper.meta.title_zh || index.paper.meta.title_en || '论文').slice(0,60)+'.knowledge.json',index,{folioType:'index',folioPaperId:data.paper_id,folioContent:indexHash},parent);fresh.push(file);
+    }
     const sent=new Set(outgoing.map(op=>op.event_id));
-    return S.mergeRemote(data.paper_id,reader,sent,{bound_account:account.permissionId,cloud_file_id:remoteFile.id,
-      paper:bundle.paper,images:bundle.images,discussion:bundle.discussion,item:bundle.item});
+    return S.mergeRemote(data.paper_id,reader,sent,{bound_account:account.permissionId,cloud_file_id:remoteFile.id,cloud_content_hash:await contentHash(remoteBundle),content_dirty:false,
+      paper:remoteBundle.paper,images:remoteBundle.images,discussion:remoteBundle.discussion,item:remoteBundle.item,
+      expected_content:C.canonical({paper:data.paper,images:data.images,discussion:data.discussion,item:data.item})});
   }
-  const drive={login,loadIdentity,list,getPaper,latest,
+  const drive={login,loadIdentity,list,getPaper,latest,indexes,sourceFor,
     get connected(){return !!token && Date.now()<expires;},get account(){return account;},get syncing(){return syncing;},
     logout(){token='';expires=0;account=null;},
     async syncAll(onProgress) {
@@ -140,7 +222,8 @@
           if(onProgress) onProgress(i+1,data.length);
           await syncPaper(data[i],files,id);
         }
-        await S.setting('lastSync',new Date().toISOString());return list();
+        const fresh=await list();await indexes(fresh);
+        await S.setting('lastSync',new Date().toISOString());return fresh;
       } finally {syncing=false;}
     }
   };

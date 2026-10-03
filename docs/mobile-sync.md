@@ -1,57 +1,66 @@
-# 手机阅读与 Google 云盘同步（测试版）
+# 独立手机端与共同云端资料库（测试版）
 
-此功能的代码已加入开发分支。v1.0.0 的 Windows 下载包尚不包含云同步；需完成 Google 授权配置和双端测试后再发布更新。
+手机与 Windows 是两个独立客户端。任意一端导入 PDF，连接同一 Google 账号并完成同步后，另一端都能看到它。Google Drive 的私有 Folio Read 文件夹保存完整 PDF、正文、译文、批注和用于检索的正文／笔记索引。设备保留缓存，以便离线阅读。稳定版 v1.0.0 下载包不包含这些测试功能。
 
-## iPhone 怎么用
+## iPhone 使用
 
-手机端是 PWA。无需 Mac、Apple 开发者账号或 App Store 安装；用 Safari 打开部署后的 HTTPS 手机网址，通过分享菜单选择「添加到主屏幕」。
+用 Safari 打开 [手机测试版](https://wangrunqiao0915.github.io/folio-read/mobile/)，通过分享菜单选择「添加到主屏幕」。无需 Mac、Apple 开发者账号或 App Store 安装。
 
-- 正文单栏阅读，中文 / 英文对照，公式、图表和原页图片。
-- 目录、正文查找、字号、浅色 / 深色主题。
-- 长按选中文字，四色标注与注记。选字复制仍使用系统菜单。
-- 下载后的论文和批注保存在设备内，可离线使用。清除网站数据会删除本机副本，建议定期同步或导出。
-- 导入电脑版的**单文件离线 HTML**或手机阅读 JSON。导入只读取数据，不执行 HTML 里的脚本。
-- 首版以阅读为主，手机端暂不包含翻译和 AI 问答。本机 CLI 模型无法直接在 iPhone 上运行。
+1. 在手机设置中连接 Google 云盘，电脑连接同一账号。
+2. 点击「导入论文」，选择 iPhone「文件」中的 PDF。文件在手机解析并保留原稿，联网且已连接时自动上传。
+3. 文献库显示设备离线副本和共同云端论文。云端正文按需下载；完整 PDF 可从「原页 → 打开完整 PDF」取得。
+4. 「知识库」检索共同资料，阅读页也可「问这篇论文」。检索不需要模型；翻译和 AI 回答需要手机自己的模型配置。
 
-## 两端如何互通
+支持单栏阅读、英文对照、公式、图表、原页、层级目录、查找、字号和主题。长按选字可复制、添加四色标注和注记。仍支持导入电脑版单文件离线 HTML 或阅读 JSON，导入不执行其中脚本。
 
-Windows 的「设置 → 云同步」选择论文并同步到 Google Drive 的私有 `Folio Read` 文件夹。手机连接同一账号，文献库显示云端论文，点击后按需下载。两端运行、联网且授权有效时每分钟同步；也可以点击「立即同步」。
+## 共同文献库与知识库
 
-Google 云盘容量取决于用户账号；已有付费空间可直接使用。手机仅下载选择的论文。每份阅读文件目前最多 64 MB，包含正文和内嵌原页 / 图表图片；同步包不包含原始 PDF 二进制文件。如需原始 PDF 完整备份，请另外保存到自己的云盘。
+Windows「设置 → 云同步」默认同步整个资料库，包括新导入的论文，并自动接收另一端的新论文。也可关闭全库同步，选择指定论文。手机显示共同云端列表，正文按需下载；小型知识索引在同步时缓存，检索无需先下载所有原稿和图片。
 
-同步数据包括论文正文、译文、图表、阅读位置、文字标注、段落注记、论文笔记和人工译文修订。模型 API Key、CLI 登录、机器配置、AI 聊天记录不参与同步。Windows 登录凭据使用当前 Windows 用户的 DPAPI 加密，手机访问令牌仅留在内存中。
+原稿用 SHA-256 校验值识别，同一 PDF 从两端导入使用同一个论文标识。PDF 分块上传，下载时校验；正文版本与批注事件分别保存。重复、乱序的批注事件合并；并发修改的注记保留另一版本，供手动确认。同步下载期间遇到本机新增正文修改会保留本机内容并提示重试。
 
-同一注记被两台设备同时修改时，会保留另一版本供检查。在笔记中合并需要的内容，再点击「确认采用当前版本」。译文修订、整篇论文笔记和进度以最近时间为准；设备时间应保持准确。没有自动删除云端论文，也没有把资料库设为公开。
+「知识库在云端」指原文、译文和笔记索引保存在私有云盘。Google Drive 不执行解析、检索或模型推理：两端根据共同数据建立各自的检索缓存，再把相关片段交给自己配置的模型。新设备或云端内容变更后，需同步才能检索最新资料。
 
-手机登录令牌是短期授权，过期后需要点击重新连接。Safari / iOS 限制后台运行，不能承诺手机锁屏后仍持续同步。
+回答优先引用论文和可选笔记，附页码和原文定位；允许通用知识补充时单独显示「库外补充」。关键词检索使用有限片段，未命中不代表整个库没有相关内容。
 
-## 首次 Google 配置
+联网、运行且授权有效时每分钟同步，也可手动同步。iOS 锁屏后不保证后台同步。离线导入和修改留在设备，恢复网络并连接后再同步。清除网站数据会删除本机缓存，操作前请先同步或导出。
 
-Google 云盘会员容量与应用登录授权是两项独立配置。使用用户自己的 Google Cloud 项目，启用 Google Drive API，创建同一项目内的两个 OAuth 客户端：
+## 手机模型设置
 
-1. **桌面应用**：配置在 Windows 的「设置 → 云同步 → 首次接入配置」。通过系统浏览器登录，使用本机回调和 PKCE。
-2. **Web 应用**：为手机静态站配置「已获授权的 JavaScript 来源」，例如 `https://wangrunqiao0915.github.io`。这是 origin，不能包含 `/folio-read/mobile/` 路径。测试时可另外添加 `http://localhost:8784`，预览页面也应使用这个来源。
+填写 DeepSeek 等兼容 API 的 HTTPS 地址、模型和个人 API Key。自定义服务必须允许此网页跨域访问。手机直接连接模型服务，无法使用电脑上运行的 CLI 或本机模型。
 
-手机的公开客户端 ID 写入 `easyread/web/mobile/config.json` 的 `google_web_client_id`，或在手机设置中填写。该 ID 是公开应用标识；**网页客户端 Secret、refresh token、账号凭据不得提交仓库**。
+「翻译为中文 → 开始翻译」按批次保存，可停止后继续；缺少段落或丢失显式链接／公式的响应不会写入。译文完成并同步后，另一端可读取。调用模型会发送问题和相关论文内容到你配置的服务。
 
-OAuth 权限只申请 `https://www.googleapis.com/auth/drive.file`，访问该应用创建或用户明确交给应用的文件。两种客户端必须在同一 Google Cloud 项目，才能共享相同的应用文件权限。Google 登录和实际授权由账号所有者完成。
+手机 API Key 默认仅在当前页面内存中，勾选「记在此设备」才存入网站本机存储。它不进入论文或云同步文件。电脑模型配置、CLI 登录、EasyScholar 密钥和 AI 聊天记录也不参与同步。
 
-测试模式需添加测试用户；该模式的桌面 refresh token 通常 7 天过期。公开推广前还需按 Google 的 OAuth 发布与审核要求准备应用说明、主页和隐私信息，不能把“代码可部署”当作“所有人都能登录”。
+## 限制
 
-## 部署
+- 手机 PDF 导入最多 128 MB、300 页；阅读 JSON 最多 64 MB。完整 PDF 独立保存，保持原始质量。原页缩略图有容量上限。
+- 首次 PDF 导入需联网加载固定版本解析组件；已加载的组件可以离线复用。
+- 扫描 PDF 可以保存和同步原稿；没有文字层时需另行 OCR 才能全文检索和翻译，当前不内置 OCR。
+- 手机提取文字和编号标题，不保证恢复复杂双栏、表格、公式和参考文献结构；请核对完整 PDF，也可在电脑版继续处理。
+- Google 空间使用账号已有容量。手机登录令牌过期后需重新连接。
 
-手机阅读测试版地址为 `https://wangrunqiao0915.github.io/folio-read/mobile/`。测试期间，仓库 Pages 从专用 `gh-pages` 分支的根目录发布构建后的静态资源；开发分支保持独立，稳定版 Windows 下载包不变。
+## Google 配置
 
-后续将功能合入 main 后，可在仓库「Settings → Pages → Source」选择 GitHub Actions。`mobile-pages.yml` 构建并发布仅含静态代码的站点，手机地址仍为 `/folio-read/mobile/`。资料不会随 Pages 发布；应用直接与设备存储、用户自己的 Google Drive 通信。发布资源保留项目与 KaTeX 的许可文本。
+自己的 Google Cloud 项目需启用 Drive API，在同一项目创建桌面 OAuth 和 Web OAuth 客户端。桌面通过本机回调和 PKCE 登录，refresh token 使用当前 Windows 用户的 DPAPI 加密。Web 授权 JavaScript 来源例如 https://wangrunqiao0915.github.io，不含路径；本机已配置来源 http://localhost:8784，预览须匹配来源。
 
-本机服务继续只监听 `127.0.0.1`。不要把桌面服务直接开放到公网作为手机后端。
+公开 Web client ID 位于 easyread/web/mobile/config.json，也可在手机设置中填写。网页 Secret、refresh token 和个人配置不得进入公开仓库。
 
-静态构建只复制公开资源，并按内容生成离线缓存版本。新版资源安装后需要关闭所有手机阅读页面，再重新打开；更新不会清除设备中的论文或注记。
+权限仅为 drive.file，访问应用创建或用户明确交给应用的文件。没有公开共享权限，不自动删除云端论文。两个客户端须属于同一个 Google Cloud 项目。测试模式须添加测试用户，桌面 refresh token 通常 7 天过期；公开推广前需完成 Google 的应用发布配置，公开源码不代表所有账号都能立即登录。
+
+## 部署、更新与来源
+
+测试站从 gh-pages 分支发布白名单静态代码，个人资料和凭据不进入 GitHub Pages。后续合入 main 可启用 mobile-pages.yml。本机服务仍只监听 127.0.0.1。
+
+资源按内容生成缓存版本。看到更新提示后关闭所有该站点页面，再重新打开；更新不清除设备中的论文或笔记。
+
+保留上游 MIT 和 KaTeX 许可。PDF 导入使用 Mozilla PDF.js 6.3.289（Apache-2.0），从 jsDelivr 加载组件，PDF 内容只在设备解析，不发送给 CDN。参见 [PDF.js](https://mozilla.github.io/pdf.js/) 和 [源码许可](https://github.com/mozilla/pdf.js/blob/master/LICENSE)。
 
 ## 验证范围
 
-协议测试覆盖重复 / 乱序事件、跨时区、同时修改、删除冲突、手动合并、上传时继续修改、分页、上传失败后的重试、账号隔离和配置排除。浏览器验证覆盖手机尺寸、选字标注、注记持久化、查找和离线启动。
+自动测试覆盖 PDF 分块上传、完整性校验、手机数据被电脑接收、批注合并与冲突、上传期间的新编辑、正文下载保护、分页、重试、账号隔离、凭据排除和协议一致性。浏览器实测覆盖手机尺寸、直接 PDF 导入、正文与原页、完整 PDF 入口、知识检索及来源跳转；目录检查包含去重和层级。
 
-真实 Google 两端同步、真实 iPhone 长按 / 添加主屏幕体验需要在授权配置后检查。完成前以测试版交付，不替换稳定版下载包。
+新版完整 PDF／知识索引尚需实际 Google 账号和真实 iPhone Safari 验证。模型协议使用模拟响应验证，不代表已经验证任意用户 API 的真实可用性。本功能保持测试版。
 
-参考：[Google Drive 授权](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)、[桌面 OAuth](https://developers.google.com/identity/protocols/oauth2/native-app)、[网页 token 模式](https://developers.google.com/identity/oauth2/web/guides/use-token-model)。
+参考：[Drive 权限](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)、[文件上传](https://developers.google.com/workspace/drive/api/guides/manage-uploads)、[桌面 OAuth](https://developers.google.com/identity/protocols/oauth2/native-app)、[网页授权](https://developers.google.com/identity/oauth2/web/guides/use-token-model)。

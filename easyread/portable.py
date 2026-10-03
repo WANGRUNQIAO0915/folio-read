@@ -13,8 +13,8 @@ from datetime import datetime, timezone
 
 MAX_BYTES = 64 * 1024 * 1024
 FIELDS = {
-    'meta': 'title_zh title_en short_zh authors affiliation year date venue arxiv url doi page_count source_sha256 abstract_en source pages pdf',
-    'block': 'id type level zh en page role ordered items tex tag src caption_zh caption_en head rows source_links',
+    'meta': 'title_zh title_en short_zh authors affiliation year date venue arxiv url doi page_count source_sha256 abstract_en source pages pdf text_status extraction_note',
+    'block': 'id type level num appendix zh en page role ordered items tex tag src caption_zh caption_en head rows source_links',
     'note': 'id anchor key quote prefix suffix segments lang root_index kind color style body created updated deleted _syncConflicts',
     'segment': 'anchor key quote prefix suffix lang root_index',
     'edit': 'zh base at reverted prev',
@@ -22,6 +22,7 @@ FIELDS = {
     'link': 'url label page rect',
     'reference': 'id text url doi',
     'entry': 'id anchor quote kind title q body at updated reply_to',
+    'translation': 'done_pages note',
 }
 
 
@@ -104,8 +105,12 @@ def normalize(data):
     item = pick(data.get('item'), 'item')
     if 'meta_override' in item:
         item['meta_override'] = pick(item['meta_override'], 'meta')
+    clean_paper={'schema': 2, 'meta': meta, 'blocks': blocks, 'references': [pick(r, 'reference') for r in paper.get('references', [])]}
+    if isinstance(paper.get('translation'),dict):
+        clean_paper['translation']=pick(paper['translation'],'translation')
+        clean_paper['translation']['done_pages']=sorted({p for p in paper['translation'].get('done_pages',[]) if isinstance(p,int) and 0<p<=10000})
     return {'schema': 1, 'kind': 'folio-mobile-paper', 'paper_id': pid,
-            'paper': {'schema': 2, 'meta': meta, 'blocks': blocks, 'references': [pick(r, 'reference') for r in paper.get('references', [])]},
+            'paper': clean_paper,
             'reader': clean_reader(data.get('reader')),
             'discussion': {'entries': [pick(e, 'entry') for e in (data.get('discussion') or {}).get('entries', [])]},
             'item': item, 'images': {k: v for k, v in (data.get('images') or {}).items() if safe_key(k) and isinstance(v, str) and re.fullmatch(r'data:image/(?:png|jpeg|webp|gif);base64,[a-zA-Z0-9+/=\s]+', v)},

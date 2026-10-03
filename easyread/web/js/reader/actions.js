@@ -197,13 +197,17 @@
     window.scrollTo({ top: scrollY + top, behavior: instant ? "auto" : "smooth" });
   };
 
-  /* opts：noBack 不记返回点；instant 不要动画；noFlash 不闪 */
+  /* opts：noBack 不记返回点；instant 不要动画；noFlash 不闪；start 章节顶端对齐 */
   PR.jumpTo = function (domId, opts) {
     const el = document.getElementById(domId);
     if (!el) return;
     opts = opts || {};
     if (!opts.noBack && PR.rememberSpot) PR.rememberSpot(el);  // 跳得远就记下原处，好回去
-    PR.centerOn(el, opts.instant);
+    if (opts.start) {
+      const tools = PR.$('#readingTools'), bar = PR.$('#bar');
+      const top = Math.max(tools ? tools.getBoundingClientRect().bottom : 0, bar ? bar.getBoundingClientRect().bottom : 0) + 18;
+      window.scrollTo({top: scrollY + el.getBoundingClientRect().top - top, behavior: opts.instant ? 'auto' : 'smooth'});
+    } else PR.centerOn(el, opts.instant);
     if (!opts.noFlash) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
     history.replaceState(history.state, "", "#" + domId);
   };

@@ -320,7 +320,7 @@ class Handler(BaseHTTPRequestHandler):
             elif action == 'select':
                 if app.drive.busy:
                     raise ValueError('请等同步结束后再修改选择')
-                app.drive.select(body.get('ids', []))
+                app.drive.select(body.get('ids', []),sync_all=bool(body.get('sync_all',False)))
             elif action in ('login', 'sync'):
                 app.drive.run(action)
             elif action == 'pull':

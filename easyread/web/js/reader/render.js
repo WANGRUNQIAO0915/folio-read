@@ -37,8 +37,12 @@
       if (b.type === "math" && b.tag) PR.xindex.eq[b.tag] = b.id;
       if (b.type === "table" && b.num) PR.xindex.tab[b.num] = b.id;
       if (b.type === "figure" && b.num) PR.xindex.fig[b.num] = b.id;
-      if (b.type === "heading" || b.type === "references") { if (b.num) PR.xindex.sec[b.num] = b.id; PR.headings.push(b); }
+      if (b.type === "heading" || b.type === "references") PR.headings.push(b);
     });
+    if (!PR.headings.some(h => h.type === 'references') && (S.paper.references || []).length)
+      PR.headings.push({id: 'folio-references', type: 'references', zh: '参考文献'});
+    PR.outline = FolioOutline.build(PR.headings, h => PR.plain(PR.textFor(h.id) || h.zh || h.en || ''));
+    for (const h of PR.outline.flat) if (h.num && !PR.xindex.sec[h.num]) PR.xindex.sec[h.num] = h.id;
   }
 
   function staleTag(key) { return PR.isStale(key) ? '<button class="stale-tag" data-t="stale" title="你改过这段之后，译者稿又更新了">译者稿有更新</button>' : ""; }
@@ -61,7 +65,7 @@
     return links.length ? '<div class="block-source-links">原文链接：' + links.map(link =>
       PR.externalLink(link.label || link.url, link.url) + ' ↗').join(' · ') + '</div>' : '';
   }
-  function enDiv(text) { return text ? '<div class="en" lang="en">' + PR.md(text) + "</div>" : ""; }
+  function enDiv(text, primary, key) { return text ? '<div class="en'+(primary?' original-primary':'')+'" lang="en"'+(key?' data-key="'+PR.esc(key)+'"':'')+'>' + PR.md(text) + "</div>" : ""; }
 
   function captionHtml(b) {
     const key = b.id + "#caption";
@@ -76,14 +80,15 @@
   const R = {
     heading(b) {
       const tag = (b.level || 1) === 1 ? "h2" : "h3";
+      if(!PR.textFor(b.id) && b.en)return '<'+tag+'>'+(b.num?'<span class="num">'+PR.esc(b.num)+' </span>':'')+'<span class="en original-primary" lang="en" data-key="'+PR.esc(b.id)+'">'+PR.md(b.en)+'</span></'+tag+'>';
       return "<" + tag + ' class="zh" data-key="' + b.id + '">' + (b.num ? '<span class="num">' + PR.esc(b.num) + "</span>" : "") +
         "<span>" + PR.md(PR.textFor(b.id)) + "</span>" + staleTag(b.id) +
         (b.en ? '<span class="en-title" lang="en">' + PR.md(b.en, { cite: false, xref: false }) + "</span>" : "") + "</" + tag + ">";
     },
-    para: (b) => zhDiv(b.id) + enDiv(b.en),
+    para: (b) => PR.textFor(b.id) ? zhDiv(b.id) + enDiv(b.en,false,b.id) : enDiv(b.en,true,b.id),
     list(b) {
       const tag = b.ordered ? "ol" : "ul";
-      return "<" + tag + ">" + (b.items || []).map((it, i) => "<li>" + zhDiv(b.id + "#" + i) + enDiv(it.en) + "</li>").join("") + "</" + tag + ">";
+      return "<" + tag + ">" + (b.items || []).map((it, i) => "<li>" + (PR.textFor(b.id+'#'+i)?zhDiv(b.id + "#" + i) + enDiv(it.en,false,b.id+'#'+i):enDiv(it.en,true,b.id+'#'+i)) + "</li>").join("") + "</" + tag + ">";
     },
     math: (b) => '<div class="math-row"><div class="math-body">' + PR.tex(b.tex, true) + "</div>" + (b.tag ? '<div class="math-tag">(' + PR.esc(b.tag) + ")</div>" : "") + "</div>",
     table(b) {
@@ -148,7 +153,7 @@
     const by = [m.authors, m.affiliation].filter(Boolean).map(PR.esc).join("　·　");
     const authors = (m.authors || '').split(/[,，、;]/).map(s => s.trim()).filter(Boolean);
     const pages = (m.pages || []).length, done = (tr.done_pages || []).length;
-    const scope = "<b>译文</b>　" + (pages ? (done >= pages ? "全文 " + pages + " 页" : "已译 " + done + " / " + pages + " 页") : "尚未处理") +
+    const scope = m.text_status==='original' ? '<b>PDF 原文</b>　'+PR.esc(m.extraction_note || '正文尚未翻译，复杂排版请核对原页。') : "<b>译文</b>　" + (pages ? (done >= pages ? "全文 " + pages + " 页" : "已译 " + done + " / " + pages + " 页") : "尚未处理") +
       (tr.note ? "　" + PR.esc(tr.note) : "") +
       '<br>正文是译文；<span class="legend-agent"></span>橙色细线是 AI 的解释和回答，<span class="legend-mine"></span>紫色细线是我的笔记，都不属于原文。';
     const linksByDestination = new Map();
@@ -167,7 +172,7 @@
       blocks.find((b, i) => b.type === 'heading' && i > blocks.indexOf(abstract) &&
         (b.num || abstract) && !/摘要|abstract|关键词|keywords|article history|文章历史/i.test((b.en || '') + ' ' + (b.zh || '')));
     const jump = (b, label) => b ? '<button class="btn sm line" data-t="reading-jump" data-reading-jump="' + PR.esc(b.id) + '">' + label + ' ↓</button>' : '';
-    const metaLine = [authors[0] && (authors[0] + (authors.length > 1 ? ' 等 · ' + authors.length + ' 位作者' : '')), pages && (done >= pages ? '翻译完成 · ' + pages + ' 页' : '已译 ' + done + ' / ' + pages + ' 页')].filter(Boolean).map(PR.esc).join('　·　');
+    const metaLine = [authors[0] && (authors[0] + (authors.length > 1 ? ' 等 · ' + authors.length + ' 位作者' : '')), pages && (m.text_status==='original'?'PDF 原文 · '+pages+' 页':done >= pages ? '翻译完成 · ' + pages + ' 页' : '已译 ' + done + ' / ' + pages + ' 页')].filter(Boolean).map(PR.esc).join('　·　');
     return '<header class="paper-head" id="b-head" data-id="head">' + (kicker ? '<div class="kicker">' + kicker + "</div>" : "") +
       "<h1>" + PR.esc(m.title_zh || m.title_en || "（正在识别标题）") + "</h1>" +
       '<p class="paper-meta-line">' + metaLine + '</p><div class="paper-head-actions">' + jump(abstract, '跳到摘要') + jump(body, '进入正文') +
@@ -195,7 +200,7 @@
     const m = S.paper.meta || {};
     const done = new Set((S.paper.translation || {}).done_pages || []);
     const miss = (m.pages || []).filter((p) => !done.has(p.n) && p.n > lastPage);
-    if (!(m.pages || []).length) return '<div class="pending"><span class="spin"></span> 正在渲染原页、抽取文字…</div>';
+    if (!(m.pages || []).length) return m.text_status==='original' || (S.paper.blocks||[]).length ? '' : '<div class="pending"><span class="spin"></span> 正在渲染原页、抽取文字…</div>';
     if (!miss.length) return "";
     const job = S.job || {};
     const running = ["queued", "running"].includes(job.state);

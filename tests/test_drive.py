@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 import os
 import shutil
@@ -102,6 +103,52 @@ class DriveTest(unittest.TestCase):
         result = json.loads(subprocess.check_output([str(node), '-e', code], input=json.dumps(data).encode(), cwd=Path(__file__).parents[1]))
         self.assertEqual(result['notes'], P.materialize(data['bases'],data['events'])['notes'])
         self.assertEqual(result['version'], P.canonical(self.note)); self.assertEqual(result['fields'], P.FIELDS)
+
+    def test_original_pdf_resumable_and_integrity(self):
+        raw=b'%PDF-1.7\n'+b'x'*(5*1024*1024)
+        pid=hashlib.sha256(raw).hexdigest();(self.ws.root/'source.pdf').write_bytes(raw)
+        file=dict(id='source-1',size=len(raw),appProperties=dict(folioType='source',folioPaperId=pid))
+        responses=[(b'',{'Location':'https://www.googleapis.com/upload/drive/v3/files?upload_id=test'}),
+                   (None,{'Range':'bytes=0-4194303'}),(json.dumps(file).encode(),{})]
+        with patch.object(self.drive,'binary_request',side_effect=responses) as transfer:
+            files=[];self.drive.upload_source(self.ws,pid,files,'folder')
+            self.assertEqual(files,[file]);self.assertEqual(transfer.call_count,3)
+            self.assertEqual(transfer.call_args_list[1].args[2]['Content-Range'],f'bytes 0-4194303/{len(raw)}')
+        with patch.object(self.drive,'binary_request',return_value=(raw,{})):
+            self.assertEqual(self.drive.source_bytes([file],pid),raw)
+            with self.assertRaisesRegex(ValueError,'校验失败'):
+                self.drive.source_bytes([dict(file,appProperties=dict(folioType='source',folioPaperId='b'*64))],'b'*64)
+
+    def test_phone_upload_received_by_desktop_with_pdf(self):
+        raw=b'%PDF-1.7\nphone original fixture'
+        pid=hashlib.sha256(raw).hexdigest()
+        data=P.normalize(dict(paper_id=pid,paper=dict(meta=dict(source_sha256=pid,title_en='Phone paper',pdf='source.pdf',text_status='original'),
+             blocks=[dict(id='pdf-p1-t0',type='para',en='Cloud knowledge uses the same original article on both devices.',page=1)]),reader=empty_reader(),images={}))
+        paper=dict(id='phone-reading',appProperties=dict(folioType='paper',folioPaperId=pid))
+        source=dict(id='phone-source',size=len(raw),appProperties=dict(folioType='source',folioPaperId=pid))
+        self.drive.account={'permissionId':'acct'}
+        with patch.object(self.drive,'identify'),patch.object(self.drive,'download',return_value=data),patch.object(self.drive,'events',return_value=[]),patch.object(self.drive,'binary_request',return_value=(raw,{})):
+            self.drive.pull(paper['id'],files=[paper,source])
+        imported=Workspace(self.lib.root/pid[:12])
+        self.assertEqual((imported.root/'source.pdf').read_bytes(),raw)
+        self.assertEqual(imported.load('paper')['blocks'][0]['en'],data['paper']['blocks'][0]['en'])
+        self.assertTrue(imported.load('reader')['_cloud']['synced_once'])
+        # 全库同步默认包含未来导入的文章，也会从另一端接收新论文。
+        self.assertTrue(self.drive.status()['sync_all'])
+        self.assertTrue(all(p['selected'] for p in self.drive.status()['papers']))
+
+    def test_cloud_download_cannot_replace_new_local_translation(self):
+        data=self.drive.bundle(self.ws);pid=data['paper_id']
+        file=dict(id='cloud-update',appProperties=dict(folioType='paper',folioPaperId=pid))
+        expected={name:(self.ws.root/(name+'.json')).read_bytes() if (self.ws.root/(name+'.json')).exists() else None for name in ('paper','discussion','item')}
+        self.drive.account={'permissionId':'acct'}
+        def download(_):
+            self.ws.update('paper',lambda paper:paper['meta'].update(title_zh='下载期间的新翻译'))
+            return data
+        with patch.object(self.drive,'identify'),patch.object(self.drive,'download',side_effect=download),patch.object(self.drive,'events',return_value=[]):
+            with self.assertRaisesRegex(ValueError,'已保留本机修改'):
+                self.drive.pull(file['id'],files=[file],update_content=True,expected_content=expected)
+        self.assertEqual(self.ws.load('paper')['meta']['title_zh'],'下载期间的新翻译')
 
 
 if __name__ == '__main__':

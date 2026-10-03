@@ -105,7 +105,8 @@ class Drive:
         return {'configured': bool(self.cfg.get('client_id')), 'client_id': self.cfg.get('client_id', ''),
                 'connected': bool(self.account), 'account': self.account, 'busy': self.busy,
                 'message': self.message, 'error': self.error, 'last_sync': self.cfg.get('last_sync', ''),
-                'papers': [{'id': ws.id, 'selected': bool((ws.load('reader').get('_cloud') or {}).get('enabled')), 'title': (ws.load('paper') or {}).get('meta', {}).get('title_zh') or ws.id} for ws in self.lib.all()],
+                'sync_all': self.cfg.get('sync_all', True),
+                'papers': [{'id': ws.id, 'selected': self.cfg.get('sync_all', True) or bool((ws.load('reader').get('_cloud') or {}).get('enabled')), 'title': (ws.load('paper') or {}).get('meta', {}).get('title_zh') or (ws.load('paper') or {}).get('meta', {}).get('title_en') or ws.id} for ws in self.lib.all()],
                 'cloud': [f for f in self.files if (f.get('appProperties') or {}).get('folioType') == 'paper']}
 
     def _tokens(self, data):
@@ -221,6 +222,76 @@ class Drive:
         files.append(dict(file, appProperties={'folioType': 'folder'}))
         return file['id']
 
+    def binary_request(self, url, body=None, headers=None, method=None, limit=128*1024*1024):
+        if not url.startswith('https://www.googleapis.com/'):
+            raise ValueError('云盘文件地址无效')
+        if not self.token or time.time() >= self.expires:
+            self.request('https://www.googleapis.com/drive/v3/about?fields=user(permissionId)')
+        req = urllib.request.Request(url, body, {**(headers or {}), 'Authorization':'Bearer '+self.token}, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=90) as response:
+                raw = response.read(limit+1)
+                if len(raw)>limit:
+                    raise ValueError('原始 PDF 超过 128 MB')
+                return raw, response.headers
+        except urllib.error.HTTPError as error:
+            if error.code == 308:
+                return None, error.headers
+            raise ValueError(f'Google 文件传输失败（{error.code}），原稿仍保存在本机') from None
+
+    @staticmethod
+    def latest_kind(files, pid, kind):
+        matches = [f for f in files if (f.get('appProperties') or {}).get('folioType') == kind and f['appProperties'].get('folioPaperId') == pid]
+        return max(matches, key=lambda f: (P.timestamp(f.get('modifiedTime')), f['id']), default=None)
+
+    def upload_source(self, ws, pid, files, parent):
+        if self.latest_kind(files, pid, 'source'):
+            return
+        path = ws.root / 'source.pdf'
+        if not path.is_file():
+            return
+        if path.stat().st_size>128*1024*1024:
+            raise ValueError('原始 PDF 超过 128 MB，请先压缩')
+        raw=path.read_bytes()
+        if hashlib.sha256(raw).hexdigest()!=pid or not raw.startswith(b'%PDF'):
+            raise ValueError('原始 PDF 与论文标识不一致，请检查原稿')
+        meta=dict(name=(ws.load('paper').get('meta') or {}).get('source') or ws.id+'.pdf', mimeType='application/pdf', parents=[parent],
+                  appProperties=dict(folioApp=APP, folioType='source', folioPaperId=pid))
+        _, headers=self.binary_request('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,modifiedTime,size,appProperties',
+                                      json.dumps(meta).encode(), {'Content-Type':'application/json','X-Upload-Content-Type':'application/pdf','X-Upload-Content-Length':str(len(raw))}, 'POST')
+        session=headers.get('Location')
+        if not session or not session.startswith('https://www.googleapis.com/upload/drive/'):
+            raise ValueError('Google 上传会话无效')
+        offset=0
+        while offset<len(raw):
+            end=min(len(raw),offset+4*1024*1024)
+            result,headers=self.binary_request(session, raw[offset:end], {'Content-Type':'application/pdf','Content-Range':f'bytes {offset}-{end-1}/{len(raw)}'}, 'PUT', limit=P.MAX_BYTES)
+            if result is not None:
+                files.append(json.loads(result));return
+            received=headers.get('Range')
+            next_offset=int(received.rsplit('-',1)[1])+1 if received else 0
+            if next_offset<=offset or next_offset>len(raw):
+                raise ValueError('PDF 上传进度无效，请重试')
+            offset=next_offset
+        raise ValueError('PDF 上传未得到完成确认，请重试')
+
+    def source_bytes(self, files, pid):
+        file=self.latest_kind(files,pid,'source')
+        if not file:
+            return None
+        if not P.safe_key(file.get('id')) or int(file.get('size',0))>128*1024*1024:
+            raise ValueError('云端原始 PDF 无效或过大')
+        raw,_=self.binary_request(API+'/'+urllib.parse.quote(file['id'],safe='')+'?alt=media')
+        if not raw or not raw.startswith(b'%PDF') or hashlib.sha256(raw).hexdigest()!=pid:
+            raise ValueError('云端 PDF 校验失败，请保留文件并重新同步')
+        return raw
+
+    @staticmethod
+    def content_hash(data):
+        content={k:data[k] for k in ('paper','images','discussion')}
+        content['item']={k:data.get('item',{})[k] for k in ('tags','status','starred','rating','meta_override') if k in data.get('item',{})}
+        return hashlib.sha256(P.canonical(content).encode()).hexdigest()
+
     @staticmethod
     def latest(files, pid):
         matches = [f for f in files if (f.get('appProperties') or {}).get('folioType') == 'paper' and f['appProperties'].get('folioPaperId') == pid]
@@ -249,6 +320,19 @@ class Drive:
     def bundle(self, ws):
         from .links import for_reader
         paper = for_reader(ws)
+        if not paper.get('blocks'):
+            blocks=[]
+            for path in sorted((ws.root/'extract').glob('page-*.txt')):
+                page=int(path.stem.split('-')[-1])
+                text=path.read_text(encoding='utf-8')
+                for i,start in enumerate(range(0,len(text),1400)):
+                    if text[start:start+1400].strip():
+                        blocks.append(dict(id=f'pdf-p{page}-t{i}',type='para',page=page,en=text[start:start+1400],zh=''))
+            if blocks:
+                paper['blocks']=blocks;paper.setdefault('meta',{})['text_status']='original'
+                paper['meta']['extraction_note']='PDF 原文，尚未翻译。复杂排版请对照原页。'
+        elif any(b.get('zh') for b in paper['blocks']):
+            paper.setdefault('meta',{})['text_status']='translated'
         images = {}
         paths = [p.get('img') for p in paper.get('meta', {}).get('pages', [])] + [b.get('src') for b in paper.get('blocks', [])]
         for rel in filter(None, paths):
@@ -260,8 +344,10 @@ class Drive:
                 images[rel] = 'data:image/' + mime + ';base64,' + base64.b64encode(path.read_bytes()).decode()
         return P.normalize(dict(paper_id=ws.id, paper=paper, reader=ws.load('reader'), item=ws.load('item'), discussion=ws.load('discussion'), images=images))
 
-    def select(self, ids):
+    def select(self, ids, sync_all=False):
         selected = set(ids)
+        self.cfg['sync_all']=bool(sync_all)
+        write_json_atomic(self.config_path,self.cfg)
         for ws in self.lib.all():
             def change(reader):
                 reader.setdefault('_cloud', {})['enabled'] = ws.id in selected
@@ -270,16 +356,21 @@ class Drive:
     def sync(self):
         self.identify()
         files = self.list_files()
-        workspaces = [ws for ws in self.lib.all() if (ws.load('reader').get('_cloud') or {}).get('enabled')]
+        workspaces = [ws for ws in self.lib.all() if self.cfg.get('sync_all',True) or (ws.load('reader').get('_cloud') or {}).get('enabled')]
         for i, ws in enumerate(workspaces):
             self.message = f'正在同步 {i+1} / {len(workspaces)} 篇'
+            content_versions = {name: (ws.root / (name+'.json')).read_bytes() if (ws.root / (name+'.json')).exists() else None for name in ('paper','discussion','item')}
             data = self.bundle(ws); pid = data['paper_id']
             local = ws.load('reader'); cloud = local.get('_cloud') or {}
             if cloud.get('account') and cloud['account'] != self.account['permissionId']:
                 raise ValueError('所选论文已绑定另一 Google 账号，请切回原账号')
             remote = self.latest(files, pid)
             parent = self.folder(files)
-            content_hash = hashlib.sha256(P.canonical({k: data[k] for k in ('paper', 'images', 'discussion')}).encode()).hexdigest()
+            self.upload_source(ws,pid,files,parent)
+            content_hash = self.content_hash(data)
+            if remote and cloud.get('content_hash')==content_hash and remote['appProperties'].get('folioContent') not in (None,content_hash):
+                self.pull(remote['id'], files=files, update_content=True, expected_content=content_versions)
+                data=self.bundle(ws);local=ws.load('reader');cloud=local.get('_cloud') or {};content_hash=self.content_hash(data)
             if not remote or (remote['appProperties'].get('folioContent') != content_hash and cloud.get('content_hash') != content_hash):
                 remote = self.upload((data['paper']['meta'].get('short_zh') or ws.id)[:60] + '.folio.json', data, dict(folioType='paper', folioPaperId=pid, folioContent=content_hash), parent)
                 files.append(remote)
@@ -301,13 +392,25 @@ class Drive:
                 merged['_cloud'] = dict(enabled=True, account=self.account['permissionId'], synced_once=True, pending=pending,
                                          content_hash=content_hash, synced_at=now_iso())
                 ws._snapshot(); write_json_atomic(ws.reader_path, merged)
+            index=P.normalize(dict(remote_data,reader=merged,images={}))
+            index['reader']['progress']=dict(block=None,ratio=0,at='')
+            index_hash=hashlib.sha256(P.canonical(index).encode()).hexdigest()
+            prior_index=self.latest_kind(fresh,pid,'index')
+            if not prior_index or prior_index['appProperties'].get('folioContent')!=index_hash:
+                fresh.append(self.upload((index['paper']['meta'].get('title_zh') or index['paper']['meta'].get('title_en') or ws.id)[:60]+'.knowledge.json',index,
+                                         dict(folioType='index',folioPaperId=pid,folioContent=index_hash),parent))
             files = fresh
+        if self.cfg.get('sync_all',True):
+            known={(w.load('paper').get('meta') or {}).get('source_sha256') or w.id for w in self.lib.all()}
+            for pid in sorted({f['appProperties']['folioPaperId'] for f in files if f.get('appProperties',{}).get('folioType')=='paper'}-known):
+                self.message='正在接收另一设备上传的论文'
+                self.pull(self.latest(files,pid)['id'],files=files)
         self.files = files; self.cfg['last_sync'] = now_iso(); self.cfg['device_id'] = self.device
         write_json_atomic(self.config_path, self.cfg); self.message = '同步完成'
 
-    def pull(self, file_id):
-        """Download a selected cloud reading copy; never reconstruct a fake PDF."""
-        self.identify(); files = self.list_files()
+    def pull(self, file_id, files=None, update_content=False, expected_content=None):
+        """Receive the shared document and verified original PDF, with local caching."""
+        self.identify(); files = self.list_files() if files is None else files
         file = next((f for f in files if f['id'] == file_id and (f.get('appProperties') or {}).get('folioType') == 'paper'), None)
         if not file:
             raise ValueError('找不到这篇云端论文，请刷新后再试')
@@ -316,6 +419,8 @@ class Drive:
             raise ValueError('云端论文标识不匹配')
         remote = P.materialize([data['reader']], self.events(files, pid))
         ws = next((w for w in self.lib.all() if (w.load('paper') or {}).get('meta', {}).get('source_sha256') == pid or w.id == pid), None)
+        if ws and (ws.load('reader').get('_cloud') or {}).get('account') not in (None,self.account['permissionId']):
+            raise ValueError('这篇论文属于另一 Google 账号')
         if ws is None:
             from .store import Workspace, empty_discussion, empty_reader
             import tempfile
@@ -328,6 +433,9 @@ class Drive:
             if destination.exists():
                 raise ValueError('本机论文目录冲突，请先检查资料库')
             stage = Path(tempfile.mkdtemp(prefix='.drive-import-', dir=self.lib.root))
+            source=self.source_bytes(files,pid)
+            if source:
+                (stage/'source.pdf').write_bytes(source)
             for rel, image in data['images'].items():
                 path = (stage / rel).resolve()
                 if not path.is_relative_to(stage) or rel.replace('\\', '/').split('/')[0] not in ('pages', 'figures'):
@@ -339,13 +447,37 @@ class Drive:
             write_json_atomic(stage / 'item.json', dict(data.get('item') or {}, added=now_iso()))
             write_json_atomic(stage / 'reader.json', empty_reader())
             stage.rename(destination); ws = Workspace(destination)
+        elif update_content:
+            # Validate every image before touching the local document. Downloading must
+            # not replace a translation or metadata edit made while the request ran.
+            images=[]
+            for rel,image in data['images'].items():
+                path=(ws.root/rel).resolve()
+                if not path.is_relative_to(ws.root) or rel.replace('\\','/').split('/')[0] not in ('pages','figures'):
+                    raise ValueError('云端图片路径无效')
+                images.append((path,base64.b64decode(image.split(',',1)[1],validate=True)))
+            with dir_lock(ws.root):
+                if expected_content is None or any(((ws.root/(name+'.json')).read_bytes() if (ws.root/(name+'.json')).exists() else None)!=raw for name,raw in expected_content.items()):
+                    raise ValueError('下载期间本机正文有更新，已保留本机修改，请再次同步')
+                if ws.load('job').get('state') in ('running','queued'):
+                    raise ValueError('这篇论文正在处理，完成后再同步正文')
+                for path,raw in images:
+                    path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(raw)
+                write_json_atomic(ws.paper_path,data['paper'])
+                write_json_atomic(ws.discussion_path,data.get('discussion') or {})
+                write_json_atomic(ws.item_path,dict(ws.load('item'),**data.get('item',{})))
+        if not (ws.root/'source.pdf').exists():
+            source=self.source_bytes(files,pid)
+            if source:
+                (ws.root/'source.pdf').write_bytes(source)
         with dir_lock(ws.root):
             current = ws.load('reader'); cloud = current.get('_cloud') or {}
             if cloud.get('account') and cloud['account'] != self.account['permissionId']:
                 raise ValueError('这篇论文属于另一 Google 账号')
             merged = P.materialize([current, remote], cloud.get('pending', []))
             merged['rev'] = current.get('rev', 0) + 1
-            merged['_cloud'] = dict(cloud, enabled=True, account=self.account['permissionId'], pending=cloud.get('pending', []))
+            merged['_cloud'] = dict(cloud, enabled=True, account=self.account['permissionId'], pending=cloud.get('pending', []),
+                                    synced_once=True,content_hash=self.content_hash(data))
             ws._snapshot(); write_json_atomic(ws.reader_path, merged)
         self.files = files; self.message = '论文已下载到 Windows，可离线阅读'
 

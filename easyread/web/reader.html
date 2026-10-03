@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="/web/css/study.css">
 <link rel="stylesheet" href="/web/css/workspace.css">
 <link rel="stylesheet" href="/web/css/reading-tools.css">
+<link rel="stylesheet" href="/web/css/reader-outline.css">
 <script>try{var p=JSON.parse((localStorage.getItem("easyread-prefs")||localStorage.getItem("coread-prefs"))||"{}");var d=p.theme==="dark"||(p.theme!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.dataset.theme=d?"dark":"light"}catch(e){}</script>
 </head>
 <body class="reader-page">
@@ -22,7 +23,7 @@
 
 <header class="topbar" id="bar">
   <a class="btn brand-back" id="backBtn" href="/" title="回文献库"></a>
-  <button class="btn icon" data-act="drawer" title="目录（T）"></button>
+  <button class="btn icon" data-act="drawer" title="目录（T）" aria-label="打开目录" aria-controls="drawer" aria-expanded="false"></button>
   <div class="bar-titles">
     <span class="bar-title"></span>
     <span class="bar-section"></span>
@@ -43,12 +44,13 @@
 
 <div id="readingTools" class="reading-tools" role="toolbar" aria-label="常用阅读工具"></div>
 
-<aside id="drawer" aria-label="目录">
+<aside id="drawer" aria-label="阅读导航" inert>
   <div class="drawer-tabs" role="tablist">
     <button data-tab="toc" class="on">目录</button>
     <button data-tab="terms">术语</button>
     <button data-tab="about">说明</button>
     <button data-tab="recent" class="server-only">最近</button>
+    <button class="drawer-close" data-drawer-close title="收起目录" aria-label="收起目录">×</button>
   </div>
   <div class="drawer-body"></div>
 </aside>
@@ -101,6 +103,7 @@
 <script src="/web/js/common/markup.js"></script>
 <script src="/web/js/common/journal-rank.js"></script>
 <script src="/web/js/reader/store.js"></script>
+<script src="/web/js/reader/outline.js"></script>
 <script src="/web/js/reader/render.js"></script>
 <script src="/web/js/reader/margin.js"></script>
 <script src="/web/js/reader/anchor.js"></script>
