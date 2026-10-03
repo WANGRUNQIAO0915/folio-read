@@ -61,6 +61,8 @@ Windows「设置 → 云同步」默认同步整个资料库，包括新导入�
 
 自动测试覆盖 PDF 分块上传、完整性校验、手机数据被电脑接收、批注合并与冲突、上传期间的新编辑、正文下载保护、分页、重试、账号隔离、凭据排除和协议一致性。浏览器实测覆盖手机尺寸、直接 PDF 导入、正文与原页、完整 PDF 入口、知识检索及来源跳转；目录检查包含去重和层级。
 
-新版完整 PDF／知识索引尚需实际 Google 账号和真实 iPhone Safari 验证。模型协议使用模拟响应验证，不代表已经验证任意用户 API 的真实可用性。本功能保持测试版。
+100 项 Python 测试、7 组 Node 回归检查和 82 项打包 EXE 窗口与功能检查通过。手机 PDF 导入、正文／原页与知识检索已在正式 HTTPS 页面验证。本地安装的新版 Windows 应用已完成实际 Google 同步：云端阅读副本与不含图片的知识索引均存在，下载回来的完整 PDF 与本地 SHA-256 一致。
+
+真实 iPhone Safari 的双向上传流程仍需用户验证。模型协议使用模拟响应验证，不代表已经验证任意用户 API 的真实可用性。本功能保持测试版。
 
 参考：[Drive 权限](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)、[文件上传](https://developers.google.com/workspace/drive/api/guides/manage-uploads)、[桌面 OAuth](https://developers.google.com/identity/protocols/oauth2/native-app)、[网页授权](https://developers.google.com/identity/oauth2/web/guides/use-token-model)。
