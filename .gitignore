@@ -25,3 +25,13 @@ dist/
 /promo/
 /desktop-cache/
 /.desktop-icon.ico
+
+# Android generated outputs and local toolchains/credentials
+android/.gradle/
+android/**/build/
+android/local.properties
+android/web/node_modules/
+*.jks
+*.keystore
+*.apk
+*.aab

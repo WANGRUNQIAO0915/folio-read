@@ -1,0 +1,108 @@
+name: Android test APK
+
+on:
+  pull_request:
+    paths: ['android/**', 'easyread/web/**', 'scripts/build_android_assets.py', 'scripts/build_mobile_site.py', 'tests/test_android*', '.github/workflows/android.yml']
+  workflow_dispatch:
+    inputs:
+      enable_google_drive:
+        description: 'Enable native Drive authorization after registering this APK package and signing SHA-1'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install integrity-locked offline PDF engine
+        run: npm ci --prefix android/web --ignore-scripts --omit=optional
+      - name: Reader and Android integration regression tests
+        run: |
+          python -m unittest discover -s tests -p 'test_android*.py' -v
+          python -m unittest discover -s tests -p 'test_mobile_build.py' -v
+          node tests/test_mobile.cjs
+          node tests/test_mobile_drive.cjs
+          node tests/test_mobile_knowledge.cjs
+          node tests/test_android_drive.cjs
+      - name: Build, lint, and package instrumentation tests
+        working-directory: android
+        run: ./gradlew --no-daemon lintDebug assembleDebug assembleDebugAndroidTest -PenableGoogleDrive=${{ (github.event_name != 'workflow_dispatch' || inputs.enable_google_drive) && 'true' || 'false' }}
+      - name: Record exact APK checksums and signing identity
+        run: |
+          mkdir -p android-artifacts
+          cp android/app/build/outputs/apk/debug/app-debug.apk android-artifacts/folio-read-0.1.0-test.apk
+          sha256sum android-artifacts/*.apk > android-artifacts/SHA256SUMS.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs android-artifacts/folio-read-0.1.0-test.apk > android-artifacts/signing-certificate.txt
+          printf 'Commit: %s\nPackage: io.github.wangrunqiao0915.folioread.debug\nGoogle Drive enabled: %s\n' "$GITHUB_SHA" '${{ github.event_name != 'workflow_dispatch' || inputs.enable_google_drive }}' > android-artifacts/build-info.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: folio-read-android-debug
+          path: android-artifacts/
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-instrumentation-inputs
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-lint-report
+          path: android/app/build/reports/lint-results-debug.*
+
+  emulator-smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-instrumentation-inputs
+          path: test-apks
+      - name: Inspect existing emulator acceleration
+        id: acceleration
+        run: |
+          if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+            echo 'mode=on' >> "$GITHUB_OUTPUT"
+          else
+            echo 'mode=off' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Test bundled PDF import, local persistence and cancelled picker on Android 15
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -accel ${{ steps.acceleration.outputs.mode }}
+          script: |
+            adb install test-apks/debug/app-debug.apk
+            adb install test-apks/androidTest/debug/app-debug-androidTest.apk
+            adb shell svc wifi disable
+            adb shell svc data disable
+            adb shell am instrument -w io.github.wangrunqiao0915.folioread.debug.test/androidx.test.runner.AndroidJUnitRunner | tee instrumentation-result.txt
+            grep -q 'OK (' instrumentation-result.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-emulator-results
+          path: instrumentation-result.txt
