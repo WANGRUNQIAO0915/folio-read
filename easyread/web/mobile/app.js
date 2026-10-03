@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const C=window.FolioMobile,S=window.FolioStorage,D=window.FolioDrive,$=s=>document.querySelector(s),E=C.esc;
+  const P=window.FolioPlatform || {},C=window.FolioMobile,S=window.FolioStorage,D=window.FolioDrive,$=s=>document.querySelector(s),E=C.esc;
   let view='library',papers=[],active=null,cloudFiles=[],selection=null,settings={},scrollTimer=0,toastTimer=0,aiOptions={},aiKey='',aiTask=null;
   const title=data=>(data.item.meta_override || {}).title_zh || data.paper.meta.title_zh || data.paper.meta.title_en || '未命名论文';
   const effectiveMeta=data=>({...data.paper.meta,...data.item.meta_override});
@@ -26,8 +26,8 @@
   }
   function library() {
     const recent=papers.slice().sort((a,b)=>C.time(b.opened_at || b.imported_at)-C.time(a.opened_at || a.imported_at));
-    let html='<div class="eyebrow">YOUR SHARED LIBRARY</div><h1>你的文献库</h1><p class="intro">'+(D.connected?'手机与电脑，共用同一个私有云端资料库。':'从手机直接导入 PDF。连接云盘后，与电脑共享资料。')+'</p><div class="actions"><button class="primary" data-act="import">导入论文</button><button class="secondary" data-act="syncLibrary">'+(D.connected?'同步资料库':'连接云盘')+'</button></div>';
-    if(!recent.length) html+='<section class="empty"><h2>从这里加入第一篇论文</h2><p>选择 iPhone「文件」中的 PDF，也可导入已有的阅读 HTML 或 JSON。PDF 在此设备解析，联网并连接云盘后自动上传。</p><button class="secondary" data-act="demo">试读示例</button></section>';
+    let html='<div class="eyebrow">YOUR SHARED LIBRARY</div><h1>你的文献库</h1><p class="intro">'+(D.connected?'手机与电脑，共用同一个私有云端资料库。':(P.native?'PDF、阅读与笔记保存在此设备。云盘同步需完成 Android 授权配置。':'从手机直接导入 PDF。连接云盘后，与电脑共享资料。'))+'</p><div class="actions"><button class="primary" data-act="import">导入论文</button><button class="secondary" data-act="syncLibrary">'+(D.connected?'同步资料库':'连接云盘')+'</button></div>';
+    if(!recent.length) html+='<section class="empty"><h2>从这里加入第一篇论文</h2><p>选择'+(P.native?'系统文件选择器':'iPhone「文件」')+'中的 PDF，也可导入已有的阅读 HTML 或 JSON。PDF 在此设备解析，联网并连接云盘后自动上传。</p><button class="secondary" data-act="demo">试读示例</button></section>';
     else {
       const data=recent[0];
       html+='<button class="resume" data-open="'+E(data.paper_id)+'"><div class="eyebrow">继续阅读</div><h2>'+E(title(data))+'</h2><div class="progress"><i style="width:'+percent(data)+'%"></i></div><footer><span>'+percent(data)+'% · '+notes(data).length+' 条批注</span><span>继续 →</span></footer></button>';
@@ -181,10 +181,19 @@
     $('#driveLogin').onclick=async()=>{try {await D.login(settings.googleClientId);cloudFiles=await D.syncAll();papers=await S.all();preferences();toast('Google 云盘已连接，共同资料库已同步');}catch(error){toast(error.message);}};
     $('#driveSync').onclick=async()=>{try{if(aiTask)throw new Error('请先完成或停止模型任务。');$('#driveSync').disabled=true;cloudFiles=await D.syncAll((i,n)=>{if($('#driveState'))$('#driveState').textContent='正在同步 '+i+' / '+n+' 篇';});papers=await S.all();if(active) active=await S.get(active.paper_id);preferences();toast('同步完成');}catch(error){preferences();toast(error.message);}};
     if(settings.googleClientId && navigator.onLine) D.loadIdentity().catch(()=>{});
+    if(P.native) {
+      $('#googleClientId').closest('details').hidden=true;
+      if(!D.connected) $('#driveState').textContent='Android 测试版使用原生 Google 授权。需要在同一 Google 项目登记此安装包的应用 ID 和签名 SHA-1 后启用；不会在内嵌网页中登录。';
+      const backup=$('#offlineState').closest('section');
+      backup.querySelector('p').textContent='论文、原稿和批注保存在此应用。卸载或清除应用数据会删除它们；请先导出备份。应用更新不会主动清除资料。';
+      const install=document.querySelector('.install-note').closest('section');
+      install.innerHTML='<h3>Android 测试版</h3><p>阅读界面、PDF 解析器、字体和公式均随安装包提供，首次打开即可离线使用。Google 同步需原生授权配置，模型功能仍需网络和你自行配置的 API。</p>';
+    }
     offlineStatus();
   }
   async function offlineStatus() {
     const el=$('#offlineState');if(!el) return;
+    if(P.bundledAssets) {el.textContent='离线资源已随安装包内置，无需首次联网下载。';return;}
     if(!('serviceWorker' in navigator) || !isSecureContext) {el.textContent='离线启动需要 HTTPS 或本机预览环境。';return;}
     const registration=await navigator.serviceWorker.getRegistration();
     el.textContent=registration && registration.active?'离线启动资源已就绪。':'离线启动资源正在准备，请稍后重新打开。';
@@ -292,9 +301,10 @@
       {id:'reflection-text',type:'para',zh:'阅读时，可以把一个疑问留在对应段落旁。下次打开论文，阅读位置和批注仍在手机里。示例仅用于体验界面，不是整篇论文的翻译。原论文：https://arxiv.org/abs/1706.03762',page:4}
     ]},reader:C.emptyReader(),images:{},item:{},discussion:{entries:[]}});data.demo=true;await S.save(data);papers=await S.all();await openPaper(data.paper_id);
   }
-  function downloadJson(value,name) {
+  async function downloadJson(value,name) {
+    if(P.saveBlob) return P.saveBlob(new Blob([JSON.stringify(value,null,2)],{type:'application/json'}),name);
     const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:'application/json'}));
-    const link=document.createElement('a');link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    const link=document.createElement('a');link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);return true;
   }
   function outline() {
     const headings=active.paper.blocks.filter(b=>b.type==='heading'||b.type==='references');
@@ -346,9 +356,10 @@
       if(act.dataset.act==='toc') outline();
       if(act.dataset.act==='original') {
         const pages=active.paper.meta.pages || [];sheet('原文页面','<div id="sourcePDF"><button class="secondary" id="loadSourcePDF">打开完整 PDF</button></div>'+ (pages.filter(p=>active.images[p.img]).map(p=>'<p class="muted small">第 '+E(p.n)+' 页</p><img class="original-page" src="'+E(active.images[p.img])+'" alt="原文第 '+E(p.n)+' 页" loading="lazy">').join('') || '<p class="muted">可从云盘取得完整 PDF，或使用有原稿的设备再同步一次。</p>'));
-        $('#loadSourcePDF').onclick=async()=>{try{const source=await D.sourceFor(active.paper_id,cloudFiles),url=URL.createObjectURL(source.blob);$('#sourcePDF').innerHTML='<a class="secondary" target="_blank" rel="noopener" href="'+E(url)+'">查看完整 PDF ↗</a>';setTimeout(()=>URL.revokeObjectURL(url),300000);}catch(error){toast(error.message);}};
+        if(P.native) $('#loadSourcePDF').textContent='导出完整 PDF';
+        $('#loadSourcePDF').onclick=async()=>{try{const source=await D.sourceFor(active.paper_id,cloudFiles);if(P.saveBlob){const saved=await P.saveBlob(new Blob([source.blob],{type:'application/pdf'}),source.name || 'source.pdf');toast(saved?'完整 PDF 已保存，可在系统文件应用中打开':'已取消导出');return;}const url=URL.createObjectURL(source.blob);$('#sourcePDF').innerHTML='<a class="secondary" target="_blank" rel="noopener" href="'+E(url)+'">查看完整 PDF ↗</a>';setTimeout(()=>URL.revokeObjectURL(url),300000);}catch(error){toast(error.message);}};
       }
-      if(act.dataset.act==='backup') {if(!active) return toast('先打开一篇论文，再导出阅读文件');downloadJson(C.normalize(active),title(active).replace(/[\\/:*?"<>|]/g,'')+'.folio.json');toast('已导出论文与当前批注');}
+      if(act.dataset.act==='backup') {if(!active) return toast('先打开一篇论文，再导出阅读文件');const saved=await downloadJson(C.normalize(active),title(active).replace(/[\\/:*?"<>|]/g,'')+'.folio.json');toast(saved?'已导出论文与当前批注':'已取消导出');}
       if(act.dataset.act==='find') {sheet('查找正文','<input id="findInput" type="search" class="search" placeholder="输入关键词" aria-label="查找关键词"><div id="findResults"></div>');$('#findInput').oninput=()=>{const query=$('#findInput').value.trim().toLowerCase();$('#findResults').innerHTML=query?active.paper.blocks.filter(b=>JSON.stringify(b).toLowerCase().includes(query)).map(b=>'<button class="find-match" data-jump="'+E(b.id)+'" data-paper="'+E(active.paper_id)+'">'+E(PR.plain(b.zh || b.caption_zh || b.en || '').slice(0,120))+'<small>p.'+E(b.page || '?')+'</small></button>').join('') || '<p class="muted">没有找到相关文字。</p>':'';};$('#findInput').focus();}
     } catch(error) {toast(error.message);}
   });
@@ -370,7 +381,7 @@
       try{active=await S.commit(id,[{op:'progress',block:blocks[index].dataset.block,ratio:(index+1)/blocks.length,at:new Date().toISOString()}]);$('#headerStatus').textContent=active.demo?'界面示例':percent(active)+'% · 已保存';}catch(error){toast(error.message);}
     },600);
   },{passive:true});
-  window.addEventListener('online',()=>toast('已联网，可以连接 Google 云盘并同步批注'));
+  window.addEventListener('online',()=>toast(P.native?'已联网':'已联网，可以连接 Google 云盘并同步批注'));
   setInterval(async()=>{
     if(!D.connected || D.syncing || aiTask || !navigator.onLine || document.hidden) return;
     try{cloudFiles=await D.syncAll();papers=await S.all();
@@ -381,6 +392,13 @@
       }
     }catch(error){toast(error.message);}
   },60000);
+  P.onBack=()=>{
+    if($('#sheet').open){if(aiTask && $('#translationState'))aiTask.abort();closeSheet();return true;}
+    if(!$('#selectionTools').hidden){$('#selectionCancel').click();return true;}
+    if(aiTask){toast('请先完成或停止当前模型任务。');return true;}
+    if(view!=='library'){setView('library');return true;}
+    return false;
+  };
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyAppearance);
   (async()=>{
     settings={theme:'auto',font:18,bilingual:false,...await S.setting('appearance')};
@@ -390,7 +408,7 @@
       if(config.google_web_client_id) settings.googleClientId=config.google_web_client_id;
     }
     applyAppearance();papers=await S.all();setView('library');
-    if('serviceWorker' in navigator && isSecureContext) navigator.serviceWorker.register('./sw.js').then(reg=>{
+    if(!P.bundledAssets && 'serviceWorker' in navigator && isSecureContext) navigator.serviceWorker.register('./sw.js').then(reg=>{
       if(reg.waiting) toast('手机阅读资源有更新，关闭后重新打开即可使用');
       navigator.serviceWorker.addEventListener('controllerchange',offlineStatus);
     }).catch(()=>toast('离线启动资源尚未准备好，当前仍可在线阅读'));

@@ -4,19 +4,30 @@
   const C=root.FolioMobile, S=root.FolioStorage;
   const API='https://www.googleapis.com/drive/v3/files';
   const SCOPE='https://www.googleapis.com/auth/drive.file';
-  let token='',expires=0,account=null,syncing=false,identity=null;
+  let token='',expires=0,account=null,syncing=false,identity=null,signingIn=false;
+  const nativeAuthorization=()=>typeof root.FolioPlatform?.authorizeDrive==='function';
+  async function invalidateToken() {
+    const rejected=token;token='';expires=0;account=null;
+    if(nativeAuthorization() && typeof root.FolioPlatform.clearDriveToken==='function') {
+      try {await root.FolioPlatform.clearDriveToken(rejected);} catch(_) {}
+    }
+  }
   async function request(url,options={}) {
     if (!token || Date.now()>=expires) throw new Error('请先点「连接 Google 云盘」完成登录。');
     if (!url.startsWith('https://www.googleapis.com/')) throw new Error('云盘请求地址无效。');
     const response=await fetch(url,{...options,headers:{...options.headers,Authorization:'Bearer '+token}});
     if(!response.ok) {
-      if(response.status===401) {token='';throw new Error('Google 登录已过期，请重新连接云盘。');}
+      if(response.status===401) {
+        await invalidateToken();
+        throw new Error('Google 登录已过期，请重新连接云盘。');
+      }
       const error=await response.json().catch(()=>({}));
       throw new Error((error.error && error.error.message) || '云盘请求失败，请稍后重试。');
     }
     return response;
   }
   function loadIdentity() {
+    if(nativeAuthorization()) return Promise.resolve();
     if(root.google && root.google.accounts) return Promise.resolve();
     if(identity) return identity;
     identity=new Promise((resolve,reject)=>{
@@ -27,6 +38,25 @@
     return identity;
   }
   async function login(clientId) {
+    if(signingIn)throw new Error('Google 授权正在进行，请先完成或关闭当前窗口。');
+    if(syncing)throw new Error('云盘同步正在进行，请完成后再切换账号。');
+    signingIn=true;
+    try {return await authorizeLogin(clientId);} finally {signingIn=false;}
+  }
+  async function authorizeLogin(clientId) {
+    // Android uses Google's native authorization UI, never OAuth inside WebView.
+    if(nativeAuthorization()) {
+      token='';expires=0;account=null;
+      try {
+        const accessToken=await root.FolioPlatform.authorizeDrive();
+        if(typeof accessToken!=='string' || !accessToken || /\s/.test(accessToken))throw new Error('Google 授权未返回有效登录凭据。');
+        // Native tokens can be cached by Play services; HTTP 401 still invalidates them.
+        token=accessToken;expires=Date.now()+50*60*1000;
+        account=(await (await request('https://www.googleapis.com/drive/v3/about?fields=user(permissionId,emailAddress,displayName)')).json()).user;
+        if(!account || !account.permissionId)throw new Error('未能确认云盘账号。');
+        return account;
+      } catch(error) {token='';expires=0;account=null;throw error;}
+    }
     if(!/^[\w.-]+\.apps\.googleusercontent\.com$/.test(clientId || '')) throw new Error('请先配置 Google 登录客户端 ID。');
     await loadIdentity();
     return new Promise((resolve,reject)=>{
@@ -82,11 +112,12 @@
         const response=await fetch(session,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/pdf','Content-Range':'bytes '+offset+'-'+(end-1)+'/'+blob.size},body:blob.slice(offset,end)});
         if(response.ok)return response.json();
         if(response.status===308) {const range=response.headers.get('Range'),next=range?Number(range.split('-').pop())+1:0;if(next<=offset || next>blob.size)throw new Error('云盘未确认本段上传，请重试。');offset=next;retries=0;continue;}
-        if(response.status===401){token='';throw new Error('Google 登录已过期，请重新连接后重试。');}
+        if(response.status===401){await invalidateToken();throw new Error('Google 登录已过期，请重新连接后重试。');}
         throw new Error('PDF 上传未完成（'+response.status+'），本机原稿仍然保留。');
       } catch(error) {
         if(!token || ++retries>2)throw error;
         const probe=await fetch(session,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Range':'bytes */'+blob.size}});
+        if(probe.status===401){await invalidateToken();throw new Error('Google 登录已过期，请重新连接后重试。');}
         if(probe.ok)return probe.json();
         if(probe.status!==308)throw error;
         const range=probe.headers.get('Range');offset=range?Number(range.split('-').pop())+1:0;
