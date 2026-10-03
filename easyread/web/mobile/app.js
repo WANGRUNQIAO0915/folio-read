@@ -1,12 +1,27 @@
 (function () {
   'use strict';
   const P=window.FolioPlatform || {},C=window.FolioMobile,S=window.FolioStorage,D=window.FolioDrive,$=s=>document.querySelector(s),E=C.esc;
-  let view='library',papers=[],active=null,cloudFiles=[],selection=null,settings={},scrollTimer=0,toastTimer=0,aiOptions={},aiKey='',aiTask=null;
+  let view='library',papers=[],active=null,cloudFiles=[],selection=null,settings={},scrollTimer=0,toastTimer=0,aiOptions={},aiKey='',aiTask=null,driveFolderImportEnabled=false;
   const title=data=>(data.item.meta_override || {}).title_zh || data.paper.meta.title_zh || data.paper.meta.title_en || '未命名论文';
   const effectiveMeta=data=>({...data.paper.meta,...data.item.meta_override});
   const notes=data=>Object.values(data.reader.notes || {}).filter(n=>!n.deleted || (n._syncConflicts || []).some(c=>!c.deleted));
   const percent=data=>Math.round(100*(Number((data.reader.progress || {}).ratio)||0));
   function toast(text) {$('#toast').textContent=text;$('#toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>{$('#toast').hidden=true;},4500);}
+  async function syncCloud(onProgress) {
+    try {cloudFiles=await D.syncAll(onProgress);return cloudFiles;}
+    finally {papers=await S.all();if(view==='library')library();}
+  }
+  function syncMessage(fallback) {
+    const report=D.lastImportReport;
+    if(report?.errors.length)return '同步已处理可用论文；'+report.errors.length+' 个云盘 PDF 未能导入，请在设置中查看。';
+    if(report?.status==='permission_required')return '已同步应用内资料；文件夹导入仍需额外只读授权。';
+    return report?.imported?'同步完成，已从云盘导入 '+report.imported+' 篇 PDF。':fallback;
+  }
+  function folderImportDetails() {
+    const report=D.lastImportReport;
+    if(!report?.errors.length)return '';
+    return '<details><summary>部分云盘 PDF 未导入（'+report.errors.length+'）</summary><ul>'+report.errors.map(error=>'<li>'+E(error.name)+'：'+E(error.message)+'</li>').join('')+'</ul><p>原文件未改动。修复后再次同步会重试。</p></details>';
+  }
   function sheet(name,html) {$('#sheetTitle').textContent=name;$('#sheetBody').innerHTML=html;$('#sheet').showModal();}
   function closeSheet() {$('#sheet').close();}
   function applyAppearance() {
@@ -27,6 +42,7 @@
   function library() {
     const recent=papers.slice().sort((a,b)=>C.time(b.opened_at || b.imported_at)-C.time(a.opened_at || a.imported_at));
     let html='<div class="eyebrow">YOUR SHARED LIBRARY</div><h1>你的文献库</h1><p class="intro">'+(D.connected?'手机与电脑，共用同一个私有云端资料库。':(P.native?'PDF、阅读与笔记保存在此设备。云盘同步需完成 Android 授权配置。':'从手机直接导入 PDF。连接云盘后，与电脑共享资料。'))+'</p><div class="actions"><button class="primary" data-act="import">导入论文</button><button class="secondary" data-act="syncLibrary">'+(D.connected?'同步资料库':'连接云盘')+'</button></div>';
+    html+=folderImportDetails();
     if(!recent.length) html+='<section class="empty"><h2>从这里加入第一篇论文</h2><p>选择'+(P.native?'系统文件选择器':'iPhone「文件」')+'中的 PDF，也可导入已有的阅读 HTML 或 JSON。PDF 在此设备解析，联网并连接云盘后自动上传。</p><button class="secondary" data-act="demo">试读示例</button></section>';
     else {
       const data=recent[0];
@@ -169,7 +185,7 @@
   function paperNotes() {sheet('这篇论文的批注',noteCards(active)+'<div class="actions"><button class="primary" data-act="addNote">添加段落注记</button></div>');}
   function preferences() {
     $('#app').innerHTML='<div class="eyebrow">MAKE IT YOURS</div><h1>阅读设置</h1><section class="settings-group"><h3>阅读外观</h3><div class="setting-row"><span>字号</span><div><button data-size="-1" aria-label="缩小字号">A−</button> <span id="fontValue">'+settings.font+'</span> <button data-size="1" aria-label="增大字号">A＋</button></div></div><div class="setting-row"><label for="theme">主题</label><select id="theme"><option value="auto">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div></section>'+
-      '<section class="settings-group"><h3>Google 云盘</h3><p id="driveState">'+(D.connected?E(D.account.emailAddress || D.account.displayName)+' · 已连接':'连接后，两端可共享论文和批注。资料保存在你自己的云盘，离线阅读不需要登录。')+'</p><div class="actions"><button class="primary" id="driveLogin">'+(D.connected?'切换账号':'连接 Google 云盘')+'</button><button class="secondary" id="driveSync" '+(!D.connected?'disabled':'')+'>立即同步</button></div><p>手机导入的 PDF、正文、译文与知识索引会上传到共同资料库。另一设备的正文与图片按需下载；知识检索使用共同云端索引。模型密钥不参与同步。</p><details><summary class="small muted">Google 授权配置</summary><label for="googleClientId">网页客户端 ID</label><input id="googleClientId" autocapitalize="none" spellcheck="false" placeholder="…apps.googleusercontent.com" value="'+E(settings.googleClientId || '')+'"><button id="saveClient" class="secondary">保存配置</button><p>此 ID 是应用的公开登录标识，不是 API Key。首次接入需要在 Google Cloud 中创建一次。</p></details></section>'+
+      '<section class="settings-group"><h3>Google 云盘</h3><p id="driveState">'+(D.connected?E(D.account.emailAddress || D.account.displayName)+' · 已连接':'连接后，两端可共享论文和批注。资料保存在你自己的云盘，离线阅读不需要登录。')+'</p><div class="actions"><button class="primary" id="driveLogin">'+(D.connected?'切换账号':'连接 Google 云盘')+'</button><button class="secondary" id="driveSync" '+(!D.connected?'disabled':'')+'>立即同步</button></div><p>手机导入的 PDF、正文、译文与知识索引会上传到共同资料库。另一设备的正文与图片按需下载；知识检索使用共同云端索引。模型密钥不参与同步。</p><label class="check-row"><input id="driveFolderImport" type="checkbox" '+(driveFolderImportEnabled?'checked':'')+' '+(!D.folderReadGranted&&!driveFolderImportEnabled?'disabled':'')+'>同步时自动导入 Folio Read 文件夹中的 PDF</label><p>'+ (D.folderReadGranted?'已获得云盘只读权限；只扫描应用创建的 Folio Read 文件夹，不递归扫描子文件夹。':'普通同步仅能访问应用创建或已授权的文件。启用自动导入需额外授权读取整个 Google 云盘；应用只扫描自己创建的 Folio Read 文件夹，不递归扫描子文件夹。')+'</p>'+(!D.folderReadGranted?'<button id="driveFolderGrant" class="secondary">授权并启用自动导入</button>':'')+'<p>启用后在设备内提取正文，不调用 AI；原文件保持不变。为兼容其他设备，将按内容校验值去重，并在 Folio Read Sources 子文件夹保存一份应用管理的 PDF 副本，同时生成阅读与知识索引。</p>'+folderImportDetails()+'<details><summary class="small muted">Google 授权配置</summary><label for="googleClientId">网页客户端 ID</label><input id="googleClientId" autocapitalize="none" spellcheck="false" placeholder="…apps.googleusercontent.com" value="'+E(settings.googleClientId || '')+'"><button id="saveClient" class="secondary">保存配置</button><p>此 ID 是应用的公开登录标识，不是 API Key。首次接入需要在 Google Cloud 中创建一次。</p></details></section>'+
       '<section class="settings-group"><h3>手机模型</h3><p>手机可独立翻译和向共同知识库提问。模型请求直接发送到你填写的 API 地址；电脑上的本机模型需要电脑在线且另行配置可访问的接口。</p><label for="phoneModelBase">API 地址</label><input id="phoneModelBase" type="url" value="'+E(aiOptions.base_url || 'https://api.deepseek.com')+'" autocapitalize="none" spellcheck="false"><label for="phoneModelName">模型名称</label><input id="phoneModelName" value="'+E(aiOptions.model || 'deepseek-chat')+'" autocapitalize="none" spellcheck="false"><label for="phoneModelKey">API Key</label><input id="phoneModelKey" type="password" value="'+E(aiKey)+'" autocomplete="off" autocapitalize="none" spellcheck="false"><label class="check-row"><input id="rememberPhoneKey" type="checkbox" '+(aiOptions.remember_key?'checked':'')+'>将密钥保存在此设备</label><p>默认只在本次打开期间使用。勾选后保存在浏览器设备存储中；不上传云盘。</p><button class="secondary" id="savePhoneModel">保存模型配置</button><button class="secondary" id="forgetPhoneKey">清除设备密钥</button></section>'+
       '<section class="settings-group"><h3>离线与备份</h3><p>下载后的论文、图片和批注保存在此设备。清除 Safari 的网站数据会移除本机副本；请先同步或导出备份。</p><div class="actions"><button class="secondary" data-act="backup">导出当前论文</button><button class="secondary" data-act="import">导入阅读文件</button></div><p id="offlineState">正在检查离线阅读资源…</p></section>'+
       '<section class="settings-group"><h3>添加到 iPhone 主屏幕</h3><p class="install-note">用 Safari 打开手机阅读网址，点分享，再选「添加到主屏幕」。第一次下载论文后，离线也能打开阅读。需要 HTTPS 网址。</p></section>';
@@ -178,8 +194,10 @@
     $('#saveClient').onclick=async()=>{const id=$('#googleClientId').value.trim();if(!/^[\w.-]+\.apps\.googleusercontent\.com$/.test(id)) return toast('客户端 ID 格式不正确');settings.googleClientId=id;await S.setting('appearance',settings);D.loadIdentity().catch(()=>{});toast('Google 登录配置已保存');};
     $('#savePhoneModel').onclick=async()=>{try{const base=$('#phoneModelBase').value.trim(),url=new URL(base);if(url.protocol!=='https:' || url.username || url.password || url.search || url.hash)throw new Error('请使用 HTTPS 模型 API 地址');aiKey=$('#phoneModelKey').value.trim();aiOptions={base_url:base.replace(/\/$/,''),model:$('#phoneModelName').value.trim(),remember_key:$('#rememberPhoneKey').checked};await S.setting('aiOptions',aiOptions);await S.setting('aiKey',aiOptions.remember_key?aiKey:'');window.FolioAI.setConfig({...aiOptions,api_key:aiKey});toast('手机模型配置已保存');}catch(error){toast(error.message);}};
     $('#forgetPhoneKey').onclick=async()=>{aiKey='';await S.setting('aiKey','');window.FolioAI.setConfig({api_key:''});$('#phoneModelKey').value='';toast('设备密钥已清除');};
-    $('#driveLogin').onclick=async()=>{try {await D.login(settings.googleClientId);cloudFiles=await D.syncAll();papers=await S.all();preferences();toast('Google 云盘已连接，共同资料库已同步');}catch(error){toast(error.message);}};
-    $('#driveSync').onclick=async()=>{try{if(aiTask)throw new Error('请先完成或停止模型任务。');$('#driveSync').disabled=true;cloudFiles=await D.syncAll((i,n)=>{if($('#driveState'))$('#driveState').textContent='正在同步 '+i+' / '+n+' 篇';});papers=await S.all();if(active) active=await S.get(active.paper_id);preferences();toast('同步完成');}catch(error){preferences();toast(error.message);}};
+    $('#driveFolderImport').onchange=async e=>{if(e.target.checked && !D.folderReadGranted){e.target.checked=driveFolderImportEnabled;return toast('请先获得云盘只读授权。');}driveFolderImportEnabled=e.target.checked;await S.setting('driveFolderImportEnabled',driveFolderImportEnabled);toast(driveFolderImportEnabled?'下次同步会扫描 Folio Read 文件夹中的 PDF':'已关闭云盘文件夹自动导入');};
+    if($('#driveFolderGrant'))$('#driveFolderGrant').onclick=async()=>{try{if(aiTask)throw new Error('请先完成或停止模型任务。');$('#driveFolderGrant').disabled=true;await D.login(settings.googleClientId,{folderImport:true});await S.setting('driveFolderImportEnabled',true);driveFolderImportEnabled=true;await syncCloud();papers=await S.all();preferences();toast(syncMessage('已启用云盘 PDF 自动导入'));}catch(error){preferences();toast(error.message);}};
+    $('#driveLogin').onclick=async()=>{try {await D.login(settings.googleClientId,{folderImport:driveFolderImportEnabled});await syncCloud();papers=await S.all();preferences();toast(syncMessage('Google 云盘已连接，共同资料库已同步'));}catch(error){toast(error.message);}};
+    $('#driveSync').onclick=async()=>{try{if(aiTask)throw new Error('请先完成或停止模型任务。');$('#driveSync').disabled=true;await syncCloud((i,n)=>{if($('#driveState'))$('#driveState').textContent='正在同步 '+i+' / '+n+' 篇';});papers=await S.all();if(active) active=await S.get(active.paper_id);preferences();toast(syncMessage('同步完成'));}catch(error){preferences();toast(error.message);}};
     if(settings.googleClientId && navigator.onLine) D.loadIdentity().catch(()=>{});
     if(P.native) {
       $('#googleClientId').closest('details').hidden=true;
@@ -202,17 +220,20 @@
     $('#importButton').disabled=true;
     try {
       let data;
-      if(/\.pdf$/i.test(file.name) || file.type==='application/pdf') {
+      const isPdf=/\.pdf$/i.test(file.name) || file.type==='application/pdf';
+      if(isPdf) {
+        if(file.size>window.FolioPDF.MAX_SOURCE)throw new Error('PDF 超过 128 MB，请先压缩后导入。');
         toast('正在在此设备解析 PDF…');
-        data=await window.FolioPDF.parse(file,(n,total)=>{$('#headerStatus').textContent='解析 '+n+' / '+total+' 页';});
+        const existing=await S.get(await window.FolioPDF.sha(await file.arrayBuffer()));
+        data=existing || await window.FolioPDF.parse(file,(n,total)=>{$('#headerStatus').textContent='解析 '+n+' / '+total+' 页';});
         if(new TextEncoder().encode(JSON.stringify(data)).length>C.MAX_BYTES)throw new Error('阅读副本超过 64 MB，请拆分或压缩 PDF。');
-        await S.source(data.paper_id,{blob:file,name:file.name});
+        if(!(await S.source(data.paper_id))?.blob)await S.source(data.paper_id,{blob:file,name:file.name,bound_account:data.bound_account});
       } else {
         if(file.size>C.MAX_BYTES) throw new Error('阅读文件超过 64 MB。');
         data=C.parseImport(await file.text());
       }
-      await S.importBundle(data);papers=await S.all();await openPaper(data.paper_id);toast('论文已导入，原稿与阅读内容保存在此设备');
-      if(D.connected && navigator.onLine) {cloudFiles=await D.syncAll();papers=await S.all();active=await S.get(data.paper_id);toast('已上传到共同云端资料库，电脑同步后即可看到');}
+      await S.importBundle(data,{preserveExisting:isPdf});papers=await S.all();await openPaper(data.paper_id);toast('论文已导入，原稿与阅读内容保存在此设备');
+      if(D.connected && navigator.onLine) {await syncCloud();papers=await S.all();active=await S.get(data.paper_id);toast(syncMessage('已上传到共同云端资料库，电脑同步后即可看到'));}
     } finally {$('#importButton').disabled=false;}
     if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
   }
@@ -286,7 +307,7 @@
         settings.bilingual=true;await S.setting('appearance',settings);closeSheet();renderPaper();toast('译文已保存，准备同步到云端');
       } catch(error){active=await S.get(id);toast(error.message);if($('#translationState'))$('#translationState').textContent='已完成的段落已经保存。重新打开翻译可继续未完成部分。';}
       finally{aiTask=null;if($('#startMobileTranslation')){$('#startMobileTranslation').disabled=false;$('#stopMobileTranslation').hidden=true;}}
-      if(D.connected && navigator.onLine)try{cloudFiles=await D.syncAll();active=await S.get(id);toast('译文已同步，另一设备同步后即可读取');}catch(error){toast(error.message);}
+      if(D.connected && navigator.onLine)try{await syncCloud();active=await S.get(id);toast(syncMessage('译文已同步，另一设备同步后即可读取'));}catch(error){toast(error.message);}
     };
     $('#stopMobileTranslation').onclick=()=>aiTask?.abort();
   }
@@ -346,7 +367,7 @@
       if(act.dataset.act==='import') $('#importFile').click();
       if(act.dataset.act==='translatePaper') return translatePaper();
       if(act.dataset.act==='askPaper') return setView('knowledge',true);
-      if(act.dataset.act==='syncLibrary') {if(aiTask)throw new Error('请先完成或停止模型任务。');if(!D.connected)return setView('settings');toast('正在同步资料库…');cloudFiles=await D.syncAll();papers=await S.all();library();toast('资料库已同步');}
+      if(act.dataset.act==='syncLibrary') {if(aiTask)throw new Error('请先完成或停止模型任务。');if(!D.connected)return setView('settings');toast('正在同步资料库…');await syncCloud();papers=await S.all();library();toast(syncMessage('资料库已同步'));}
       if(act.dataset.act==='demo') await demo();
       if(act.dataset.act==='library') {papers=await S.all();setView('library');}
       if(act.dataset.act==='paperNotes') paperNotes();
@@ -384,7 +405,7 @@
   window.addEventListener('online',()=>toast(P.native?'已联网':'已联网，可以连接 Google 云盘并同步批注'));
   setInterval(async()=>{
     if(!D.connected || D.syncing || aiTask || !navigator.onLine || document.hidden) return;
-    try{cloudFiles=await D.syncAll();papers=await S.all();
+    try{await syncCloud();papers=await S.all();
       if(view==='library')library();
       if(view==='reader' && active && getSelection().isCollapsed && !$('#sheet').open){
         const fresh=await S.get(active.paper_id),changed=C.canonical(active.reader.notes)!==C.canonical(fresh.reader.notes);
@@ -401,6 +422,7 @@
   };
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyAppearance);
   (async()=>{
+    driveFolderImportEnabled=await S.setting('driveFolderImportEnabled')===true;
     settings={theme:'auto',font:18,bilingual:false,...await S.setting('appearance')};
     aiOptions=await S.setting('aiOptions') || {};aiKey=aiOptions.remember_key?(await S.setting('aiKey') || ''):'';window.FolioAI.setConfig({...aiOptions,api_key:aiKey});
     if(!settings.googleClientId) {

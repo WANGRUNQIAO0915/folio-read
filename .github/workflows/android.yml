@@ -38,6 +38,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_mobile_build.py' -v
           node tests/test_mobile.cjs
           node tests/test_mobile_drive.cjs
+          node tests/test_mobile_folder_import.cjs
           node tests/test_mobile_knowledge.cjs
           node tests/test_android_drive.cjs
       - name: Build, lint, and package instrumentation tests

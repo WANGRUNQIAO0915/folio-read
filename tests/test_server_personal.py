@@ -52,6 +52,17 @@ class ServerPersonalTest(unittest.TestCase):
         self.assertEqual(body["preferences"]["goal"], "重点核对方法")
         self.assertEqual(self.request("GET", "/api/personal")[1]["preferences"]["goal"], "重点核对方法")
 
+    def test_drive_folder_import_requires_explicit_local_action(self):
+        self.app.drive.status.return_value = {'connected': False}
+        body = {'enabled': True}
+        self.assertEqual(self.request('POST', '/api/drive/folder-import', body)[0], 403)
+        self.app.drive.run.assert_not_called()
+        self.assertEqual(self.request('POST', '/api/drive/folder-import', body, {'X-Token': 'test-token'})[0], 200)
+        self.app.drive.run.assert_called_once_with('login', True)
+        self.assertEqual(self.request('POST', '/api/drive/folder-import', {'enabled': 'true'}, {'X-Token': 'test-token'})[0], 400)
+        self.assertEqual(self.request('POST', '/api/drive/folder-import', {'enabled': False}, {'X-Token': 'test-token'})[0], 200)
+        self.app.drive.disable_folder_import.assert_called_once()
+
     def test_foreign_host_and_origin_cannot_read_local_data(self):
         self.assertEqual(self.request("GET", "/api/personal", headers={"Host": "foreign.example"})[0], 403)
         self.assertEqual(self.request("GET", "/api/personal", headers={"Origin": "https://foreign.example"})[0], 403)

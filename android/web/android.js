@@ -27,7 +27,10 @@
     native: true,
     bundledAssets: true,
     pdfBase: new URL('../vendor/pdfjs/', location.href).href,
-    authorizeDrive: async () => (await request('authorizeDrive')).token,
+    authorizeDrive: async (options = {}) => {
+      const result = await request('authorizeDrive', {folderImport: options.folderImport === true});
+      return {token: result.token, grantedScopes: Array.isArray(result.grantedScopes) ? result.grantedScopes : []};
+    },
     clearDriveToken: token => request('clearDriveToken', {token}),
     async saveBlob(blob, name) {
       if (saving) throw new Error('请先完成或取消当前导出。');
