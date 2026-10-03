@@ -1,0 +1,57 @@
+name: Diagnose fixed PR4 Android candidate
+
+# One bounded diagnostic job for PR4's CI candidate, NOT the APK delivered earlier.
+# Reuse these exact APKs; this workflow must never build, sign, or distribute one.
+on:
+  push:
+    branches: ['diag/drive-import-android-crash']
+    paths: ['.github/workflows/android-pr4-diagnostics.yml', 'scripts/diagnose_android_candidate.sh']
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  fixed-pr4-candidate:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/diag/drive-import-android-crash'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-instrumentation-inputs
+          run-id: 37123181013
+          github-token: ${{ github.token }}
+          path: test-apks
+      - name: Verify both exact PR4 candidate APKs before installation
+        run: |
+          mkdir -p pr4-diagnostics
+          printf 'Source run: 37123181013\nSource commit: 91368f9113c020964ee9ec97713c231482756430\nArtifact: 11274351986\nNot the previously delivered APK. No rebuild or re-sign.\n' > pr4-diagnostics/provenance.txt
+          echo '1007ef91add794f2a36ee12d2d7662c2b30d11d93f0d152426a8ca7355177244  test-apks/debug/app-debug.apk' | sha256sum --check --strict
+          echo '7d4e9fb7667727fe250d99de4a364f8e70e548a78b001917315498e0d4dbdeb9  test-apks/androidTest/debug/app-debug-androidTest.apk' | sha256sum --check --strict
+          sha256sum test-apks/debug/app-debug.apk test-apks/androidTest/debug/app-debug-androidTest.apk > pr4-diagnostics/SHA256SUMS.txt
+      - name: Inspect existing emulator acceleration
+        id: acceleration
+        run: |
+          if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+            echo 'mode=on' >> "$GITHUB_OUTPUT"
+          else
+            echo 'mode=off' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Diagnose the unchanged candidate once on offline Android 15
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          emulator-boot-timeout: 900
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -accel ${{ steps.acceleration.outputs.mode }}
+          script: bash scripts/diagnose_android_candidate.sh test-apks
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr4-fixed-candidate-diagnostics
+          path: pr4-diagnostics/
+          retention-days: 3
