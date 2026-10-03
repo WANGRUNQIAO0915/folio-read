@@ -34,7 +34,9 @@ def fixture(destination: Path) -> None:
             f"BT /F1 20 Tf 50 720 Td ({TITLE}) Tj "
             f"0 -40 Td /F1 14 Tf (Synthetic page {number}. No external services.) Tj ET"
         ).encode("ascii"))
-        page[NameObject("/Contents")] = stream
+        # PDF content streams must be indirect objects. Assigning the stream
+        # directly is tolerated by pypdf but ignored by PDFium (blank pages).
+        page.replace_contents(stream)
     writer.add_metadata({"/Title": TITLE, "/Author": "Folio CI synthetic fixture"})
     with destination.open("wb") as output:
         writer.write(output)
