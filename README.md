@@ -20,7 +20,7 @@ Folio Read 是一款以阅读为中心的 Windows 桌面应用：把英文论文
 
 本项目基于 [EasyRead](https://github.com/Edwardxlai/easyread) 开发，保留上游 MIT 许可证与原作者版权声明。
 
-iPhone 测试版支持独立导入 PDF、阅读、批注和资料库检索。手机与 Windows 通过自己的 Google Drive 共享完整 PDF、正文、译文和笔记，任意一端上传后，另一端同步即可看到；手机可单独配置 DeepSeek 等 API 用于翻译和问答。[打开手机版](https://wangrunqiao0915.github.io/folio-read/mobile/) · [同步与安装说明](docs/mobile-sync.md)。稳定版 v1.0.0 下载包尚不包含这些测试功能。
+iPhone 测试版支持独立导入 PDF、阅读、批注和资料库检索。手机与 Windows 通过自己的 Google Drive 共享完整 PDF、正文、译文和笔记，任意一端上传后，另一端同步即可看到；手机可单独配置 DeepSeek 等 API 用于翻译和问答。[打开手机版](https://wangrunqiao0915.github.io/folio-read/mobile/) · [同步与安装说明](docs/mobile-sync.md)。源码测试版还支持在明确授权后，同步时自动导入直接放进 Folio Read 云盘文件夹的 PDF；两种入口按文件内容去重，不自动调用 AI。稳定版 v1.0.0 下载包尚不包含这些测试功能。
 
 测试版还加入了 easyScholar 期刊分区查询和正文参考文献预览。电脑版在「设置 → 期刊分区」填写个人 SecretKey；密钥只保存在本机，查询结果可同步到手机。点击编号或作者—年份引用可查看条目、跳到文末及打开已有 DOI。详见[期刊与引用说明](docs/journal-and-citations.md)。
 

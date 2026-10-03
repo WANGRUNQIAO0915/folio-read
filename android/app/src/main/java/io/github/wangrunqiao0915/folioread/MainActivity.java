@@ -21,12 +21,14 @@ import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 import org.json.JSONObject;
+import org.json.JSONArray;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -151,9 +153,10 @@ public final class MainActivity extends Activity {
                     if (!BuildConfig.GOOGLE_DRIVE_ENABLED) {
                         throw new IllegalStateException("此测试包尚未启用 Google 授权。请先登记应用 ID 与签名 SHA-1，再构建启用云盘的安装包。");
                     }
-                    google.authorize(new GoogleAuthorization.Callback() {
-                        @Override public void success(String token) {
-                            try { respond(reply, new JSONObject().put("id", requestId).put("ok", true).put("token", token)); }
+                    google.authorize(message.optBoolean("folderImport", false), new GoogleAuthorization.Callback() {
+                        @Override public void success(String token, List<String> grantedScopes) {
+                            try { respond(reply, new JSONObject().put("id", requestId).put("ok", true).put("token", token)
+                                    .put("grantedScopes", new JSONArray(grantedScopes))); }
                             catch (Exception error) { MainActivity.this.failure(reply, requestId, "Google 授权结果不可用"); }
                         }
                         @Override public void failure(String message) { MainActivity.this.failure(reply, requestId, message); }

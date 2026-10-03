@@ -45,5 +45,9 @@ const window={FolioMobile:C};vm.runInNewContext(fs.readFileSync('easyread/web/mo
   await editing;const result=await merging;
   assert.equal(result.pending.length,1);assert.equal(result.reader.notes['n-1'].body,'上传期间的新修改');
   assert.equal(result.reader.notes['n-1']._syncConflicts,undefined);
+  const beforeDuplicate=await S.get(normalized.paper_id);
+  const droppedCopy=C.normalize({...normalized,item:{tags:[]}});droppedCopy.paper.meta.title_zh='Duplicate name';
+  const preserved=await S.importBundle(droppedCopy,{preserveExisting:true});
+  assert.deepEqual(preserved,beforeDuplicate,'Folder PDF dedup must not replace content, translations, annotations, metadata, or outbox');
   console.log('Mobile protocol, privacy, conflicts, timezone, and in-flight edits: passed');
 })().catch(e=>{console.error(e);process.exitCode=1;});

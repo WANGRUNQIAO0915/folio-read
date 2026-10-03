@@ -38,6 +38,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_mobile_build.py' -v
           node tests/test_mobile.cjs
           node tests/test_mobile_drive.cjs
+          node tests/test_mobile_folder_import.cjs
           node tests/test_mobile_knowledge.cjs
           node tests/test_android_drive.cjs
       - name: Build, lint, and package instrumentation tests
@@ -92,17 +93,28 @@ jobs:
           api-level: 35
           arch: x86_64
           target: google_apis
+          emulator-boot-timeout: 900
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -accel ${{ steps.acceleration.outputs.mode }}
           script: |
             adb install test-apks/debug/app-debug.apk
             adb install test-apks/androidTest/debug/app-debug-androidTest.apk
             adb shell svc wifi disable
-            adb shell svc data disable
+            phone_status="$(adb shell service check phone | tr -d '\r')"; case "$phone_status" in *': found'*) adb shell svc data disable ;; *': not found'*) echo 'No phone service exists in this emulator; there is no cellular data service to disable.' ;; *) echo "Unexpected phone service status: $phone_status"; exit 1 ;; esac
+            for i in $(seq 1 30); do [ "$(adb shell settings get global wifi_on | tr -d '\r')" = '0' ] && break; sleep 2; done
+            test "$(adb shell settings get global wifi_on | tr -d '\r')" = '0'
+            for i in $(seq 1 30); do adb shell dumpsys connectivity > connectivity-before-test.txt; grep -q 'Active default network: none' connectivity-before-test.txt && break; sleep 2; done
+            grep -q 'Active default network: none' connectivity-before-test.txt
+            adb shell dumpsys webviewupdate > webview-version.txt
             adb shell am instrument -w io.github.wangrunqiao0915.folioread.debug.test/androidx.test.runner.AndroidJUnitRunner | tee instrumentation-result.txt
+            adb logcat -d -s AndroidRuntime chromium > android-runtime-log.txt
             grep -q 'OK (' instrumentation-result.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: android-emulator-results
-          path: instrumentation-result.txt
+          path: |
+            instrumentation-result.txt
+            connectivity-before-test.txt
+            webview-version.txt
+            android-runtime-log.txt

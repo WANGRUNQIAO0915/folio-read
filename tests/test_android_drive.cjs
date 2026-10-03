@@ -10,11 +10,13 @@ const root = path.resolve(__dirname, '..');
 const adapter = fs.readFileSync(path.join(root, 'android/web/android.js'), 'utf8');
 const drive = fs.readFileSync(path.join(root, 'easyread/web/mobile/drive.js'), 'utf8');
 const TEST_TOKEN = 'synthetic-native-test-token';
+const FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const READ_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 
 function harness(options = {}) {
   const messages = [], requests = [], timers = new Map();
   let nextTimer = 0;
-  const state = { token: TEST_TOKEN, error: null, unauthorized: false, autoReply: true };
+  const state = { token: TEST_TOKEN, error: null, unauthorized: false, autoReply: true, scopes: [FILE_SCOPE] };
   const window = {
     FolioMobile: {},
     FolioStorage: {setting() { throw new Error('Login must not persist credentials'); }}
@@ -28,7 +30,7 @@ function harness(options = {}) {
       queueMicrotask(() => {
         if (message.action === 'authorizeDrive') {
           reply(state.error ? {id: message.id, ok: false, error: state.error}
-            : {id: message.id, ok: true, token: state.token});
+            : {id: message.id, ok: true, token: state.token, grantedScopes: state.scopes});
         } else if (message.action === 'clearDriveToken') {
           reply({id: message.id, ok: true});
         } else {
@@ -70,6 +72,8 @@ function harness(options = {}) {
     assert.equal(h.D.connected, true);
     assert.equal(h.D.account.emailAddress, 'test@example.invalid');
     assert.equal(h.messages[0].action, 'authorizeDrive');
+    assert.equal(h.messages[0].folderImport, false);
+    assert.equal(h.D.folderReadGranted, false);
     assert.equal(h.requests.length, 1);
     assert.match(h.requests[0].url, /\/drive\/v3\/about\?fields=user/);
     assert.equal(h.timers.size, 0);
@@ -86,6 +90,22 @@ function harness(options = {}) {
     h.D.logout();
     assert.equal(h.D.connected, false);
     assert.equal(h.D.account, null);
+  }
+  {
+    const h = harness();
+    await assert.rejects(h.D.login('', {folderImport: true}), /只读权限/);
+    assert.equal(h.messages[0].folderImport, true);
+    assert.equal(h.D.connected, false);
+    assert.equal(h.D.folderReadGranted, false);
+    h.state.scopes = [FILE_SCOPE, READ_SCOPE];
+    await h.D.login('', {folderImport: true});
+    assert.equal(h.D.folderReadGranted, true);
+    assert.equal(h.messages[1].folderImport, true);
+    h.state.scopes = [FILE_SCOPE];
+    await h.D.login('');
+    assert.equal(h.messages[2].folderImport, false);
+    assert.equal(h.D.folderReadGranted, false);
+    assert(!h.requests.some(request => request.url.includes('/oauth')));
   }
   {
     const h = harness();
@@ -143,5 +163,5 @@ function harness(options = {}) {
     assert.equal(h.D.connected, false);
     assert.equal(h.requests.length, 0);
   }
-  console.log('Android native Drive adapter: account handshake, client-ID independence, no GIS/credential persistence, 401 invalidation, cancel/setup failure, invalid tokens, concurrent login, message correlation, timeout/retry, and missing bridge passed.');
+  console.log('Android native Drive adapter: account handshake, client-ID independence, no GIS/credential persistence, 401 invalidation, cancel/setup failure, invalid tokens, concurrent login, message correlation, timeout/retry, missing bridge, explicit folder-read request, denied/partial grant, and grant reset passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

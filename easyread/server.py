@@ -321,6 +321,13 @@ class Handler(BaseHTTPRequestHandler):
                 if app.drive.busy:
                     raise ValueError('请等同步结束后再修改选择')
                 app.drive.select(body.get('ids', []),sync_all=bool(body.get('sync_all',False)))
+            elif action == 'folder-import':
+                if body.get('enabled') is True:
+                    app.drive.run('login', True)
+                elif body.get('enabled') is False:
+                    app.drive.disable_folder_import()
+                else:
+                    raise ValueError('请明确选择是否启用文件夹导入')
             elif action in ('login', 'sync'):
                 app.drive.run(action)
             elif action == 'pull':
