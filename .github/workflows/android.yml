@@ -1,9 +1,6 @@
 name: Android test APK
 
 on:
-  push:
-    branches: [feat/android-test-app]
-    paths: ['android/**', 'easyread/web/**', 'scripts/build_android_assets.py', 'scripts/build_mobile_site.py', 'tests/test_android*', '.github/workflows/android.yml']
   pull_request:
     paths: ['android/**', 'easyread/web/**', 'scripts/build_android_assets.py', 'scripts/build_mobile_site.py', 'tests/test_android*', '.github/workflows/android.yml']
   workflow_dispatch:
