@@ -366,13 +366,17 @@ def check_window(home: Path, url: str, paper_id: str, checks: dict):
             })()''')
             checks['gui_persistent_profile'] = (home / 'desktop-cache').is_dir()
             checks['gui_exports_enabled'] = __import__('webview').settings['ALLOW_DOWNLOADS']
+            # Windows DPI scaling can make a 1280px native window narrower than
+            # the docked-layout breakpoint in CSS pixels.
+            window.resize(1600, 1000)
+            checks['outline_wide_viewport'] = wait_for_ui('innerWidth >= 1100', 5)
             checks['outline_deduplicates_page_headings'] = window.evaluate_js('''(() => {
                 document.querySelector('[data-act=drawer]').click();
                 return document.querySelectorAll('#drawer [data-go]').length === 3 &&
                     document.querySelectorAll('#drawer [data-go="outline-method"]').length === 1 &&
                     !document.querySelector('#drawer [data-go="outline-repeat"]');
             })()''')
-            checks['outline_docked_without_covering_text'] = window.evaluate_js('''(() => {
+            checks['outline_docked_without_covering_text'] = wait_for_ui('''(() => {
                 const drawer = document.querySelector('#drawer').getBoundingClientRect();
                 const paper = document.querySelector('#paper').getBoundingClientRect();
                 return paper.left >= drawer.right && getComputedStyle(document.querySelector('#scrim')).pointerEvents === 'none';
