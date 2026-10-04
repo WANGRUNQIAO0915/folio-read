@@ -161,6 +161,7 @@
   document.addEventListener("mouseover", (e) => {
     const a = e.target.closest && e.target.closest("a.cite, a.xref");
     if (!a) return;
+    if(a.classList.contains('cite') && PR.side==='refs')return;
     clearTimeout(hoverT);
     hoverT = setTimeout(() => PR.popover(a, refCard(a)), 180);
   });
@@ -169,8 +170,10 @@
     const a = e.target.closest("a.cite, a.xref");
     if (!a) return;
     e.preventDefault();
+    clearTimeout(hoverT);
     PR.hidePopover();
-    PR.jumpTo(a.classList.contains("cite") ? "ref-" + a.dataset.ref : "b-" + PR.xindex[a.dataset.kind][a.dataset.key]);
+    if(a.classList.contains("cite"))PR.openReferences(a);
+    else PR.jumpTo("b-"+PR.xindex[a.dataset.kind][a.dataset.key]);
   });
   function refCard(a) {
     if (a.classList.contains("cite")) {
@@ -194,13 +197,17 @@
     window.scrollTo({ top: scrollY + top, behavior: instant ? "auto" : "smooth" });
   };
 
-  /* opts：noBack 不记返回点；instant 不要动画；noFlash 不闪 */
+  /* opts：noBack 不记返回点；instant 不要动画；noFlash 不闪；start 章节顶端对齐 */
   PR.jumpTo = function (domId, opts) {
     const el = document.getElementById(domId);
     if (!el) return;
     opts = opts || {};
     if (!opts.noBack && PR.rememberSpot) PR.rememberSpot(el);  // 跳得远就记下原处，好回去
-    PR.centerOn(el, opts.instant);
+    if (opts.start) {
+      const tools = PR.$('#readingTools'), bar = PR.$('#bar');
+      const top = Math.max(tools ? tools.getBoundingClientRect().bottom : 0, bar ? bar.getBoundingClientRect().bottom : 0) + 18;
+      window.scrollTo({top: scrollY + el.getBoundingClientRect().top - top, behavior: opts.instant ? 'auto' : 'smooth'});
+    } else PR.centerOn(el, opts.instant);
     if (!opts.noFlash) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
     history.replaceState(history.state, "", "#" + domId);
   };

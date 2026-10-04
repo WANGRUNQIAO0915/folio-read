@@ -87,7 +87,7 @@
     const hits = (L.searchHits.get(i.id) || []).map((hit) => '<a class="search-hit" href="/read/' + i.id + (hit.anchor ? '#b-' + encodeURIComponent(hit.anchor) : '') + '"><b>' + PR.esc(hit.kind + (hit.page ? ' · 第 ' + hit.page + ' 页' : '')) + '</b> ' + PR.esc(hit.snippet) + '</a>').join('');
     return '<div class="row' + (L.selected === i.id ? " on" : "") + '" data-id="' + i.id + '" role="option" draggable="true">' + thumb +
       '<div><div class="t1">' + (i.starred ? '<span class="star">' + PR.icon("star") + "</span>" : "") + "<span>" + PR.esc(title) + "</span></div>" + sub +
-      '<div class="t3">' + bits.map((b) => "<span>" + PR.esc(String(b)) + "</span>").join("<span>·</span>") + tags + "</div>" + hits + "</div>" +
+      '<div class="t3">' + bits.map((b) => "<span>" + PR.esc(String(b)) + "</span>").join("<span>·</span>") + tags + "</div>" + window.FolioJournal.badges(i) + hits + "</div>" +
       '<div class="side-info">' + statusPill(i) + prog + L.jobLine(i) + notes + "</div></div>";
   }
 

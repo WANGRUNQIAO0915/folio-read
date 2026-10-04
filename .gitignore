@@ -3,6 +3,11 @@ __pycache__/
 *.pyc
 /library/
 /config.json
+/drive-config.json
+/.drive-tokens.bin
+/.drive-cache/
+/easyscholar-config.json
+/.easyscholar-*
 .server.json
 easyread.log*
 tests/shots/
@@ -20,3 +25,13 @@ dist/
 /promo/
 /desktop-cache/
 /.desktop-icon.ico
+
+# Android generated outputs and local toolchains/credentials
+android/.gradle/
+android/**/build/
+android/local.properties
+android/web/node_modules/
+*.jks
+*.keystore
+*.apk
+*.aab

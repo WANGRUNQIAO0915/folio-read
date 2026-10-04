@@ -52,9 +52,36 @@ class ServerPersonalTest(unittest.TestCase):
         self.assertEqual(body["preferences"]["goal"], "重点核对方法")
         self.assertEqual(self.request("GET", "/api/personal")[1]["preferences"]["goal"], "重点核对方法")
 
+    def test_drive_folder_import_requires_explicit_local_action(self):
+        self.app.drive.status.return_value = {'connected': False}
+        body = {'enabled': True}
+        self.assertEqual(self.request('POST', '/api/drive/folder-import', body)[0], 403)
+        self.app.drive.run.assert_not_called()
+        self.assertEqual(self.request('POST', '/api/drive/folder-import', body, {'X-Token': 'test-token'})[0], 200)
+        self.app.drive.run.assert_called_once_with('login', True)
+        self.assertEqual(self.request('POST', '/api/drive/folder-import', {'enabled': 'true'}, {'X-Token': 'test-token'})[0], 400)
+        self.assertEqual(self.request('POST', '/api/drive/folder-import', {'enabled': False}, {'X-Token': 'test-token'})[0], 200)
+        self.app.drive.disable_folder_import.assert_called_once()
+
     def test_foreign_host_and_origin_cannot_read_local_data(self):
         self.assertEqual(self.request("GET", "/api/personal", headers={"Host": "foreign.example"})[0], 403)
         self.assertEqual(self.request("GET", "/api/personal", headers={"Origin": "https://foreign.example"})[0], 403)
+
+    def test_scholar_key_and_lookup_are_local_token_protected(self):
+        from easyread.scholar import Scholar, parse_result
+        self.app.scholar = Scholar(self.root,self.app.lib)
+        headers={'X-Token':'test-token'}
+        self.assertEqual(self.request('POST','/api/easyscholar/config',{'secret_key':'private'})[0],403)
+        code,body=self.request('POST','/api/easyscholar/config',{'secret_key':'private'},headers)
+        self.assertEqual(code,200);self.assertTrue(body['configured']);self.assertNotIn('private',json.dumps(body))
+        self.assertNotIn('private',json.dumps(self.request('GET','/api/easyscholar')[1]))
+        self.assertEqual(self.request('POST','/api/easyscholar/lookup',{'paper_id':'missing'},headers)[0],400)
+        ws=Workspace(self.app.lib.root/'test-paper');ws.root.mkdir()
+        write_json_atomic(ws.paper_path,{'meta':{'venue':'Test'},'blocks':[]})
+        rank=parse_result({'code':200,'data':{'officialRank':{'all':{'sci':'Q1'}}}},'Test')
+        with patch.object(self.app.scholar,'query',return_value=rank):
+            code,body=self.request('POST','/api/easyscholar/lookup',{'paper_id':'test-paper'},headers)
+        self.assertEqual(code,200);self.assertEqual(body['journal_rank']['metrics'][0]['value'],'Q1')
 
     def test_research_records_cannot_forge_server_evidence(self):
         headers={"X-Token":"test-token"}

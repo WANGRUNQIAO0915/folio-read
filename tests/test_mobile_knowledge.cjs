@@ -1,0 +1,21 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const K=require('../easyread/web/mobile/knowledge.js');
+const corpus=[{paper_id:'oasis',paper:{meta:{title_en:'OasisMap land cover'},blocks:[{id:'p1',type:'para',page:2,en:'LandTrendr uses temporal segmentation to identify abrupt changes in land cover. Landsat provides annual satellite imagery.'}]},reader:{notes:{n:{body:'绿洲分类需要检查耕地精度',anchor:'p1',kind:'note'}}},item:{}}];
+const result=K.retrieve(corpus,'LandTrendr land cover');assert.equal(result.sources[0].paper_id,'oasis');assert.equal(result.sources[0].page,2);
+assert.equal(K.retrieve(corpus,'绿洲分类').sources[0].type,'note');assert.equal(K.retrieve(corpus,'绿洲分类',false).sources.length,0);
+assert.equal(K.retrieve(corpus,'unrelated dinosaurs').sources.length,0);
+let body,response={answer_from_library:'LandTrendr 用于时序变化检测。[S1]',outside_knowledge:'库外示例',source_ids:['S1']};
+const window={};vm.runInNewContext(fs.readFileSync('easyread/web/mobile/ai.js','utf8'),{window,URL,fetch:async(url,options)=>{assert.equal(url,'https://api.deepseek.com/chat/completions');body=JSON.parse(options.body);assert.equal(options.headers.Authorization,'Bearer device-only');return Response.json({choices:[{message:{content:JSON.stringify(response)}}]});}});
+const pdfWindow={};vm.runInNewContext(fs.readFileSync('easyread/web/mobile/pdf-import.js','utf8'),{window:pdfWindow});
+const blocks=pdfWindow.FolioPDF.paragraphs([{str:'2.1 Methods',transform:[1,0,0,1,10,100],hasEOL:true},{str:'LandTrendr identifies landscape changes.',transform:[1,0,0,1,10,80],hasEOL:true}],2);
+assert.equal(blocks[0].num,'2.1');assert.equal(blocks[1].page,2);assert.equal(blocks[1].id,'pdf-p2-t1');
+(async()=>{
+  const A=window.FolioAI;A.setConfig({api_key:'device-only'});
+  const answer=await A.answer('方法是什么',result,true);assert.equal(answer.source_ids[0],'S1');assert.equal(answer.outside_knowledge,'库外示例');assert(!JSON.stringify(body).includes('device-only'));
+  assert.equal((await A.answer('问题',result,false)).outside_knowledge,'');
+  response={answer_from_library:'虚构来源 [S99]'};await assert.rejects(A.answer('问题',result,true),/不存在的来源/);
+  response={blocks:[{id:'a',zh:'访问 https://example.org 保留 $x^2$'}]};assert.equal((await A.translate([{id:'a',en:'Visit https://example.org and $x^2$'}]))[0].id,'a');
+  response={blocks:[{id:'a',zh:'丢了链接'}]};await assert.rejects(A.translate([{id:'a',en:'Visit https://example.org'}]),/丢失/);
+  A.setConfig({base_url:'http://example.org'});await assert.rejects(A.chat([]),/HTTPS/);
+  console.log('共同知识索引、双语检索、来源约束、库外标记与设备 API 隔离检查通过');
+})().catch(e=>{console.error(e);process.exitCode=1;});

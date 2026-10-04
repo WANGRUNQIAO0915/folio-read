@@ -128,21 +128,37 @@
 
   /* ---------- 抽屉 ---------- */
   let tab = "toc";
+  const collapsed = new Set();
+  PR.drawerDocked = () => innerWidth >= 1100;
   PR.toggleDrawer = function (force, which) {
     if (which) tab = which;
     const open = force != null ? force : !body.classList.contains("drawer-open");
+    if (open && PR.side && innerWidth < 1280) PR.openSide(null,true);
+    const anchor = PR.readingBlock && document.getElementById('b-' + PR.readingBlock());
+    const before = anchor && anchor.getBoundingClientRect().top;
     body.classList.toggle("drawer-open", open);
-    if (open) PR.renderDrawer();
+    PR.$('#drawer').inert = !open;
+    const toggle = PR.$('[data-act="drawer"]');
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? '收起目录' : '打开目录');
+    if (open) { PR.renderDrawer(); PR.syncOutline(true); }
+    PR.fitWide(); PR.renderMargin();
+    if (anchor) window.scrollBy(0, anchor.getBoundingClientRect().top - before);
   };
   PR.$("#scrim").onclick = () => PR.toggleDrawer(false);
-  if (PR.store.mode !== "server") PR.$('[data-tab="recent"]').hidden = true;  // 离线单文件版没有文献库
+  PR.$('[data-drawer-close]').onclick = () => { PR.toggleDrawer(false); PR.$('[data-act="drawer"]').focus(); };
   PR.$(".drawer-tabs").addEventListener("click", (e) => { const b = e.target.closest("[data-tab]"); if (b) { tab = b.dataset.tab; PR.renderDrawer(); } });
 
   PR.renderDrawer = function () {
-    PR.$$(".drawer-tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+    PR.$('[data-tab="recent"]').hidden = PR.store.mode !== 'server';
+    PR.$$(".drawer-tabs [data-tab]").forEach((b) => { b.classList.toggle("on", b.dataset.tab === tab); b.setAttribute('aria-selected', String(b.dataset.tab === tab)); });
     const box = PR.$(".drawer-body");
+    const top = box.scrollTop, previous = box.dataset.tab;
     box.innerHTML = ({ toc: tocHtml, terms: termsHtml, about: aboutHtml, recent: recentHtml })[tab]();
     box.className = "drawer-body " + tab;
+    box.dataset.tab = tab;
+    box.scrollTop = previous === tab ? top : 0;
+    if (tab === 'toc') PR.syncOutline();
   };
   /* 最近读过的论文：不用回文献库就能换一篇 */
   let recent = null;
@@ -159,7 +175,7 @@
     const counts = {};
     let cur = "head";
     for (const b of S.paper.blocks || []) {
-      if (b.type === "heading" || b.type === "references") cur = b.id;
+      if (b.type === "heading" || b.type === "references") cur = PR.outline.byId[b.id] ? PR.outline.byId[b.id].id : b.id;
       const n = ((PR.noteGroups || {})[b.id] || []).length;
       if (n) counts[cur] = (counts[cur] || 0) + n;
     }
@@ -167,18 +183,49 @@
   }
   function tocHtml() {
     const counts = countByHeading();
-    const cur = PR.currentHeading && PR.currentHeading();
-    let html = '<nav class="toc">', app = false;
-    for (const h of PR.headings) {
-      if (h.appendix && !app) { html += '<div class="group">附录</div>'; app = true; }
-      html += '<a href="#b-' + h.id + '" data-go="' + h.id + '" class="' + (h.level === 2 ? "l2" : "l1") + (cur === h.id ? " on" : "") + '">' +
-        (counts[h.id] ? '<span class="cnt">' + counts[h.id] + "</span>" : "") + '<span class="n">' + PR.esc(h.num || "") + "</span>" + PR.esc(PR.plain(PR.textFor(h.id) || h.zh)) + "</a>";
-    }
+    const row = h => {
+      const id = PR.esc(h.id), shut = collapsed.has(h.id);
+      return '<li class="outline-item" data-outline-id="' + id + '"><div class="outline-row" style="--depth:' + (h.depth - 1) + '">' +
+        (h.children.length ? '<button class="outline-fold" data-fold="' + id + '" aria-expanded="' + !shut + '" aria-label="' + (shut ? '展开' : '收起') + ' ' + PR.esc(h.num + ' ' + h.title) + '">›</button>' : '<span class="outline-spacer"></span>') +
+        '<a href="#b-' + id + '" data-go="' + id + '"><span class="outline-label">' + (h.num ? '<span class="outline-num">' + PR.esc(h.num) + '</span>' : '') + '<span class="outline-title">' + PR.esc(h.title) + '</span></span>' +
+        (counts[h.id] ? '<span class="outline-notes">' + counts[h.id] + ' 条笔记</span>' : '') + '</a>' +
+        (Number(h.page) > 0 ? '<span class="outline-page" title="原文第 ' + Number(h.page) + ' 页">p.' + Number(h.page) + '</span>' : '') + '</div>' +
+        (h.children.length ? '<ul class="outline-children"' + (shut ? ' hidden' : '') + '>' + h.children.map(row).join('') + '</ul>' : '') + '</li>';
+    };
+    const foldable = PR.outline.flat.some(h => h.children.length);
+    let html = '<div class="outline-tools">' + (foldable ? '<button data-outline-action="fold-all">' + (collapsed.size ? '展开章节' : '收起章节') + '</button>' : '') + '<button data-outline-action="current">定位当前</button><span>原文页</span></div>' +
+      '<nav class="outline" aria-label="文章目录"><ul class="outline-tree">' + PR.outline.roots.map(row).join('') + '</ul></nav>';
+    if (!PR.outline.flat.length) html += '<p class="hint">正文还没有章节标题。</p>';
     const done = new Set((S.paper.translation || {}).done_pages || []);
     const miss = ((S.paper.meta || {}).pages || []).filter((p) => !done.has(p.n));
-    if (miss.length) html += '<div class="group">未译的页</div>' + miss.map((p) => '<a href="#orig-' + p.n + '" data-go-orig="' + p.n + '" class="l1"><span class="n"></span>原文第 ' + p.n + " 页</a>").join("");
-    return html + "</nav>";
+    if (miss.length) html += '<nav class="toc outline-pending"><div class="group">未译的页</div>' + miss.map((p) => '<a href="#orig-' + p.n + '" data-go-orig="' + p.n + '">原文第 ' + p.n + " 页</a>").join("") + '</nav>';
+    return html;
   }
+  PR.syncOutline = function (reveal) {
+    if (tab !== 'toc' || !body.classList.contains('drawer-open') || !PR.outline) return;
+    const cur = PR.currentHeading && PR.currentHeading();
+    const node = PR.outline.byId[cur], path = new Set();
+    for (let h = node; h; h = h.parent) path.add(h.id);
+    PR.$$('#drawer [data-outline-id]').forEach(item => {
+      const id = item.dataset.outlineId, active = id === cur;
+      const row = item.firstElementChild, link = row.querySelector('[data-go]');
+      row.classList.toggle('on', active); row.classList.toggle('in-path', path.has(id));
+      if (active) link.setAttribute('aria-current', 'location'); else link.removeAttribute('aria-current');
+      if (reveal && path.has(id)) {
+        collapsed.delete(id);
+        const children = item.querySelector(':scope > .outline-children'), fold = row.querySelector('[data-fold]');
+        if (children) children.hidden = false;
+        if (fold) { fold.setAttribute('aria-expanded', 'true'); fold.setAttribute('aria-label', '收起 ' + PR.outline.byId[id].title); }
+      }
+    });
+    const all = PR.$('[data-outline-action="fold-all"]');
+    if (all) all.textContent = collapsed.size ? '展开章节' : '收起章节';
+    if (reveal && node) {
+      const row = PR.$$('#drawer [data-go]').find(a => a.dataset.go === cur).parentElement;
+      const box = PR.$('.drawer-body'), r = row.getBoundingClientRect(), b = box.getBoundingClientRect();
+      if (r.top < b.top + 44 || r.bottom > b.bottom) box.scrollTop += r.top - b.top - 70;
+    }
+  };
   function termsHtml() {
     const g = S.paper.glossary || [];
     return '<p class="hint" style="margin:0 0 10px">译法不合心意？改右边的译法，再点“替换”，会把正文里的旧译法换成新的（记为你的修改，公式不动，随时可在段落右键“恢复译者稿”）。</p>' +
@@ -205,10 +252,22 @@
       '<button class="btn sm line" data-x="keys">设置快捷键和功能</button></div>';
   }
   PR.$("#drawer").addEventListener("click", (e) => {
+    const fold = e.target.closest('[data-fold]');
+    if (fold) {
+      const id = fold.dataset.fold;
+      collapsed.has(id) ? collapsed.delete(id) : collapsed.add(id);
+      PR.renderDrawer(); return;
+    }
+    const action = e.target.closest('[data-outline-action]');
+    if (action) {
+      if (action.dataset.outlineAction === 'current') PR.syncOutline(true);
+      else { if (collapsed.size) collapsed.clear(); else PR.outline.flat.filter(h => h.children.length).forEach(h => collapsed.add(h.id)); PR.renderDrawer(); }
+      return;
+    }
     const go = e.target.closest("[data-go]");
-    if (go) { e.preventDefault(); PR.toggleDrawer(false); PR.jumpTo("b-" + go.dataset.go); return; }
+    if (go) { e.preventDefault(); if (!PR.drawerDocked()) PR.toggleDrawer(false); PR.jumpTo("b-" + go.dataset.go, {start:true}); return; }
     const og = e.target.closest("[data-go-orig]");
-    if (og) { e.preventDefault(); PR.toggleDrawer(false); PR.jumpTo("orig-" + og.dataset.goOrig); return; }
+    if (og) { e.preventDefault(); if (!PR.drawerDocked()) PR.toggleDrawer(false); PR.jumpTo("orig-" + og.dataset.goOrig); return; }
     const t = e.target.closest("[data-term]");
     if (t) {
       let from, to;

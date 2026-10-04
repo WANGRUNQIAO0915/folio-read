@@ -1,0 +1,7 @@
+{
+  "name": "folio-read-android-assets",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pinned offline PDF.js dependency for the Android test APK",
+  "dependencies": { "pdfjs-dist": "6.3.289" }
+}

@@ -39,7 +39,8 @@
     const b = e.target.closest('[data-companion]');
     if (!b) return;
     const mode = b.dataset.companion;
-    if (mode === 'notes') PR.toggleNotesPanel(true);
+    if (mode === 'refs') { PR.openSide('refs'); if(!PR.$('#refpanel').textContent)PR.$('#refpanel').innerHTML='<p class="hint reference-preview">点击正文中的引用，预览对应参考文献。</p>'; }
+    else if (mode === 'notes') PR.toggleNotesPanel(true);
     else if (mode === 'pages') PR.togglePages(true);
     else if (mode === 'chat') PR.toggleChat(true);
     else PR.openStudy(mode);
