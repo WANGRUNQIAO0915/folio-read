@@ -54,14 +54,14 @@ jobs:
           $hashes | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content -Encoding ascii dist/SHA256SUMS.txt
       - name: Test packaged EXE in isolated data directory
         id: smoke
-        continue-on-error: true
         shell: pwsh
         run: |
           $exe = (Resolve-Path dist/FolioRead.exe).Path
-          $home = Join-Path $env:RUNNER_TEMP 'folio-native-smoke'
+          $dataDir = Join-Path $env:RUNNER_TEMP 'folio-native-smoke'
           $report = Join-Path $env:RUNNER_TEMP 'folio-native-smoke.json'
-          New-Item -ItemType Directory -Force $home | Out-Null
-          $process = Start-Process -FilePath $exe -ArgumentList @('--data-dir', $home, '--smoke-test', $report) -PassThru
+          New-Item -ItemType Directory -Force $dataDir | Out-Null
+          $env:EASYREAD_LIBRARY = Join-Path $dataDir 'library'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--data-dir', $dataDir, '--smoke-test', $report) -PassThru
           if (-not $process.WaitForExit(180000)) {
             Stop-Process -Id $process.Id -Force
             throw 'Native EXE smoke test timed out after 180 seconds.'
@@ -88,6 +88,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: folio-read-windows-v1.1.0-test.1
           path: |
