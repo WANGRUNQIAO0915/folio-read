@@ -18,7 +18,8 @@ FIELDS = {
     'note': 'id anchor key quote prefix suffix segments lang root_index kind color style body created updated deleted _syncConflicts',
     'segment': 'anchor key quote prefix suffix lang root_index',
     'edit': 'zh base at reverted prev',
-    'item': 'tags status starred rating meta_override added updated last_opened archived status_manual',
+    'item': 'tags status starred rating meta_override added updated last_opened archived status_manual naming',
+    'naming': 'title source original_title original_filename updated version',
     'link': 'url label page rect',
     'reference': 'id text url doi',
     'entry': 'id anchor quote kind title q body at updated reply_to',
@@ -103,6 +104,13 @@ def normalize(data):
             b['source_links'] = [pick(l, 'link') for l in b['source_links']]
         blocks.append(b)
     item = pick(data.get('item'), 'item')
+    from .naming import clean_naming
+    if 'naming' in item:
+        naming = clean_naming(item['naming'])
+        if naming:
+            item['naming'] = naming
+        else:
+            item.pop('naming', None)
     if 'meta_override' in item:
         item['meta_override'] = pick(item['meta_override'], 'meta')
     clean_paper={'schema': 2, 'meta': meta, 'blocks': blocks, 'references': [pick(r, 'reference') for r in paper.get('references', [])]}

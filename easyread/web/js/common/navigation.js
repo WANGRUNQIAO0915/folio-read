@@ -29,7 +29,7 @@
     const paper = papers.find(p => p.id === saved);
     if (resume) {
       resume.hidden = !paper;
-      if (paper) resume.innerHTML = '<div><span class="eyebrow">继续阅读</span><b title="' + PR.esc(paper.title_zh || paper.title_en || paper.id) + '">' + PR.esc(paper.short_zh || paper.title_zh || paper.title_en || paper.id) + '</b><span class="hint">' +
+      if (paper) resume.innerHTML = '<div><span class="eyebrow">继续阅读</span><b title="' + PR.esc(paper.display_title || paper.title_zh || paper.title_en || paper.id) + '">' + PR.esc(paper.display_title || paper.short_zh || paper.title_zh || paper.title_en || paper.id) + '</b><span class="hint">' +
         (paper.progress ? '阅读进度 ' + Math.round(paper.progress * 100) + '%' : '从上次的位置继续') + '</span></div><a class="btn accent" href="' + link.href + '">继续阅读 →</a>';
     }
   };

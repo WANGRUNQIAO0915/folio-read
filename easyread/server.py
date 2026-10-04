@@ -36,6 +36,8 @@ class App:
         self.lib = Library(config.library_dir(cfg))
         from .classification import Classification
         self.classification = Classification(self.lib)
+        from .naming import Naming
+        self.naming = Naming(self.lib)
         self.jobs = Jobs(self.lib)
         self.study = study.Tasks(self.lib)
         self.token = os.urandom(12).hex()
@@ -74,15 +76,16 @@ class Handler(BaseHTTPRequestHandler):
             ctype += "; charset=utf-8"
         self._send(200, path.read_bytes(), ctype, cache)
 
-    def _download(self, body: bytes, filename: str, ctype: str):
+    def _download(self, body: bytes, filename: str, ctype: str, disposition="attachment"):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        extension = Path(filename).suffix if Path(filename).suffix in ('.html', '.zip', '.md', '.ris') else '.bin'
-        self.send_header("Content-Disposition", f"attachment; filename=\"export{extension}\"; filename*=UTF-8''{quote(filename)}")
+        extension = Path(filename).suffix if Path(filename).suffix in ('.html', '.zip', '.md', '.ris', '.pdf') else '.bin'
+        self.send_header("Content-Disposition", f"{disposition}; filename=\"export{extension}\"; filename*=UTF-8''{quote(filename)}")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def _chat(self, ws, body: dict):
         """流式回答：一行一个 JSON，{"t": 片段} … 最后 {"done": true, "id": …} 或 {"error": …}。"""
@@ -246,6 +249,12 @@ class Handler(BaseHTTPRequestHandler):
             if not ws:
                 return self._json(404, {"error": "没有这篇论文"})
             action = parts[4]
+            if action == "pdf":
+                from .naming import library_filenames
+                source = _safe(ws.root, "source.pdf")
+                if not source:
+                    return self._json(404, {"error": "没有可下载的原始 PDF"})
+                return self._download(source.read_bytes(), library_filenames(lib)[ws.id], "application/pdf")
             if action == "state":
                 from .links import for_reader
                 ws.patch_item({"last_opened": now_iso()})
@@ -275,6 +284,11 @@ class Handler(BaseHTTPRequestHandler):
             ws = lib.ws(pid)
             if ws and rel.startswith("pages/") and "w=" in url.query:  # 原页面板用的小一号图，第一次请求时生成
                 return self._file(pdfwork.page_variant(ws.root, rel, int(parse_qs(url.query)["w"][0])), cache=True)
+            if ws and rel == "source.pdf":
+                from .naming import library_filenames
+                source = _safe(ws.root, rel)
+                if source:
+                    return self._download(source.read_bytes(), library_filenames(lib)[ws.id], "application/pdf", "inline")
             if ws and (rel.split("/", 1)[0] in ("pages", "figures") or rel == "source.pdf"):
                 return self._file(_safe(ws.root, rel), cache=rel != "source.pdf")
         return self._json(404, {"error": "not found"})
@@ -299,6 +313,22 @@ class Handler(BaseHTTPRequestHandler):
         path = unquote(url.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         app, lib = self.app, self.app.lib
+
+        if path.startswith('/api/naming/'):
+            body = json.loads(self._body() or b'{}')
+            if not isinstance(body, dict):
+                raise ValueError('请求必须是对象')
+            if path == '/api/naming/suggest':
+                return self._json(200, app.naming.suggest(body))
+            if path == '/api/naming/preview':
+                return self._json(200, app.naming.preview(body, config.load()))
+            if path == '/api/naming/send':
+                return self._json(200, app.naming.send(body.get('id'), body.get('confirmed'), config.load()))
+            if path == '/api/naming/cancel':
+                return self._json(200, app.naming.cancel(body.get('id')))
+            if path == '/api/naming/apply':
+                return self._json(200, app.naming.apply(body.get('suggestions')))
+            raise ValueError('未知命名操作')
 
         if path.startswith('/api/organization/') or path.startswith('/api/classification/'):
             body = json.loads(self._body() or b'{}')

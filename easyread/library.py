@@ -32,8 +32,9 @@ class Library:
         return [Workspace(p) for p in sorted(self.root.iterdir()) if p.is_dir() and not p.name.startswith(".") and (p / "paper.json").exists()]
 
     # ---------- 列表摘要 ----------
-    def summary(self, ws: Workspace, organization=None) -> dict:
+    def summary(self, ws: Workspace, organization=None, naming_filenames=None) -> dict:
         from .scholar import visible_rank
+        from .naming import clean_naming, display_title, library_filenames
         from .organization import Organization, assignment, paper_id
         organization = Organization(self).load() if organization is None else organization
         classification = assignment(organization, paper_id(ws))
@@ -57,6 +58,9 @@ class Library:
             status = "reading"
         return {
             "id": ws.id,
+            "display_title": display_title(paper, item, ws.id),
+            "pdf_filename": (naming_filenames if naming_filenames is not None else library_filenames(self))[ws.id],
+            "naming": clean_naming(item.get("naming")),
             "title_zh": meta.get("title_zh", ""), "title_en": meta.get("title_en", ""), "short_zh": meta.get("short_zh", ""),
             "authors": meta.get("authors", ""), "affiliation": meta.get("affiliation", ""),
             "year": meta.get("year") or _year(meta.get("date", "")), "date": meta.get("date", ""),
@@ -81,7 +85,9 @@ class Library:
     def list(self) -> list[dict]:
         from .organization import Organization
         organization = Organization(self).load()
-        return [self.summary(ws, organization) for ws in self.all()]
+        from .naming import library_filenames
+        filenames = library_filenames(self)
+        return [self.summary(ws, organization, filenames) for ws in self.all()]
 
     # ---------- 导入 ----------
     def create_from_pdf(self, data: bytes, filename: str, meta: dict | None = None) -> tuple[Workspace, bool]:

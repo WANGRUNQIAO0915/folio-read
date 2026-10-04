@@ -45,6 +45,7 @@ jobs:
           node tests/test_mobile_organization.cjs
           node tests/test_mobile_organization_drive.cjs
           node tests/test_mobile_organization_ui.cjs
+          node tests/test_mobile_naming.cjs
       - name: 启动服务，打开文献库页
         run: |
           cd "$RUNNER_TEMP"
@@ -90,6 +91,15 @@ jobs:
           PLAYWRIGHT: ${{ runner.temp }}/folio-playwright/node_modules/playwright
           BROWSER_ARTIFACTS: ${{ runner.temp }}/folio-browser-artifacts/classification
         run: node tests/test_classification_browser.cjs
+      - name: Chinese naming DOM regression
+        env:
+          JSDOM: ${{ runner.temp }}/folio-playwright/node_modules/jsdom
+        run: node tests/test_naming_dom.cjs
+      - name: Chinese naming Chromium regression
+        env:
+          PLAYWRIGHT: ${{ runner.temp }}/folio-playwright/node_modules/playwright
+          BROWSER_ARTIFACTS: ${{ runner.temp }}/folio-browser-artifacts/naming
+        run: node tests/test_naming_browser.cjs
       - name: Upload Chromium screenshots, traces, and logs
         if: always()
         uses: actions/upload-artifact@v4

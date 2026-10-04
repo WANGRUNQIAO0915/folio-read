@@ -3,7 +3,7 @@
   'use strict';
   const L = PR.lib, E = PR.esc, dlg = PR.$('#organizationDlg');
   const post = (path, body) => PR.api(path, {method:'POST', body});
-  const title = i => i.title_zh || i.title_en || i.id;
+  const title = i => i.display_title || i.title_zh || i.title_en || i.id;
   const folders = () => Object.values(L.organization.folders || {}).filter(f => !f.deleted).sort((a,b)=>a.name.localeCompare(b.name, 'zh'));
   L.folderLabel = id => id ? (L.organization.folders[id]?.deleted ? '' : L.organization.folders[id]?.name || '') : '未分类';
   L.folderOptions = selected => '<option value="">未分类</option>' + folders().map(f => '<option value="'+E(f.id)+'"'+(f.id===selected?' selected':'')+'>'+E(f.name)+'</option>').join('');

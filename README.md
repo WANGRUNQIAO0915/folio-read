@@ -118,3 +118,7 @@ Folio Read 基于 [Edwardxlai/easyread](https://github.com/Edwardxlai/easyread) 
 ### 文献文件夹与 AI 分类
 
 在软件内创建文件夹、导入时选位置，之后批量移动论文并添加多个标签；原始 PDF 保持不变。AI 分类先显示接收服务和待发送片段，明确同意后生成建议，检查确认后再保存。文件夹与标签随共享资料库同步。详见[分类使用说明](docs/library-organization.md)。
+
+### 中文名称与 PDF 下载名
+
+可单篇或批量核对论文中文名称，并将它用于软件显示与下载原 PDF 的文件名。先提供本地标题建议；需要 AI 翻译时先确认接收服务与发送文本，生成后仍需检查并确认应用。AI 翻译会注明并非官方中文题名，保留原题和原文件名，不改动云盘原 PDF。详见[中文名称使用说明](docs/chinese-pdf-names.md)。

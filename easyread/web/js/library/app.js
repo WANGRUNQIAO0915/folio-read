@@ -56,7 +56,7 @@
     if (L.tag) list = list.filter((i) => (i.tags || []).includes(L.tag));
     if (L.folder !== undefined) list = list.filter((i) => (i.folder_id || null) === L.folder);
     if (q) list = list.filter((i) => L.searchHits.has(i.id));
-    const key = { opened: (i) => i.last_opened || i.added, added: (i) => i.added, year: (i) => String(i.year || ""), title: (i) => i.title_zh || i.title_en };
+    const key = { opened: (i) => i.last_opened || i.added, added: (i) => i.added, year: (i) => String(i.year || ""), title: (i) => i.display_title || i.title_zh || i.title_en };
     const k = key[L.sort] || key.opened;
     list.sort((a, b) => (L.sort === "title" ? String(k(a)).localeCompare(String(k(b)), "zh") : String(k(b)).localeCompare(String(k(a)))));
     return list;
@@ -79,10 +79,12 @@
   };
 
   function rowHtml(i) {
-    const title = i.title_zh || i.title_en || "（未命名）";
-    const sub = i.title_zh && i.title_en ? '<div class="t2" lang="en">' + PR.esc(i.title_en) + "</div>" : "";
+    const title = i.display_title || i.title_zh || i.title_en || "（未命名）";
+    const original = i.title_en || i.title_zh;
+    const sub = original && original !== title ? '<div class="t2" lang="en">' + PR.esc(original) + "</div>" : "";
     const authors = (i.authors || '').split(/[,，、;]/).map(s => s.trim()).filter(Boolean);
     const bits = [authors[0] && (authors[0] + (authors.length > 1 ? ' 等' : '')), i.year, i.venue || i.arxiv].filter(Boolean);
+    const namingBadge = i.naming?.source === 'ai_translation' ? '<span class="chip naming-source">AI 译名 · 非官方</span>' : '';
     const tags = (i.tags || []).map((t) => '<span class="chip cat">' + "# " + PR.esc(t) + "</span>").join("");
     const folder = L.folderLabel ? L.folderLabel(i.folder_id) : "";
     const folderChip = folder ? '<span class="chip folder-chip">' + PR.icon("folder", "sm") + PR.esc(folder) + "</span>" : "";
@@ -93,7 +95,7 @@
     const hits = (L.searchHits.get(i.id) || []).map((hit) => '<a class="search-hit" href="/read/' + i.id + (hit.anchor ? '#b-' + encodeURIComponent(hit.anchor) : '') + '"><b>' + PR.esc(hit.kind + (hit.page ? ' · 第 ' + hit.page + ' 页' : '')) + '</b> ' + PR.esc(hit.snippet) + '</a>').join('');
     return '<div class="row' + (L.selected === i.id ? " on" : "") + '" data-id="' + i.id + '" role="option" draggable="true">' + '<div class="paper-thumb">' + (L.selecting ? '<input type="checkbox" class="batch-check" data-batch="' + i.id + '" aria-label="选择论文：' + PR.esc(title) + '"' + (L.batch.has(i.id) ? " checked" : "") + ' >' : "") + thumb + "</div>" +
       '<div><div class="t1">' + (i.starred ? '<span class="star">' + PR.icon("star") + "</span>" : "") + "<span>" + PR.esc(title) + "</span></div>" + sub +
-      '<div class="t3">' + bits.map((b) => "<span>" + PR.esc(String(b)) + "</span>").join("<span>·</span>") + folderChip + tags + "</div>" + window.FolioJournal.badges(i) + hits + "</div>" +
+      '<div class="t3">' + bits.map((b) => "<span>" + PR.esc(String(b)) + "</span>").join("<span>·</span>") + folderChip + tags + namingBadge + "</div>" + window.FolioJournal.badges(i) + hits + "</div>" +
       '<div class="side-info">' + statusPill(i) + prog + L.jobLine(i) + notes + "</div></div>";
   }
 
@@ -102,6 +104,7 @@
     const list = filtered();
     L.visibleIds = list.map(i => i.id);
     if (L.refreshOrganizationToolbar) L.refreshOrganizationToolbar();
+    if (L.refreshNamingToolbar) L.refreshNamingToolbar();
     const view = L.VIEWS.find((v) => v[0] === L.view) || L.VIEWS[0];
     PR.$("#viewTitle").textContent = L.folder !== undefined ? (L.folderLabel(L.folder) || "未分类") : L.tag ? "标签 · " + L.tag : view[1] + (L.view === "all" ? "论文" : "");
     PR.$("#count").textContent = L.searching ? "正在检索…" : list.length + " 篇";

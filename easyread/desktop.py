@@ -13,7 +13,7 @@ import threading
 import time
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 
 def data_home(app_dir: Path, override: str | None = None) -> Path:
@@ -305,6 +305,58 @@ def check_reading_tools(window, home: Path, paper_id: str, checks: dict, wait_fo
     window.resize(1280, 880)
 
 
+def check_pdf_naming(window, url: str, paper_id: str, checks: dict, wait_for_ui):
+    """Exercise the reviewed local naming flow in the real packaged WebView."""
+    window.load_url(url + '/')
+    deadline = time.monotonic() + 15
+    ready = False
+    while time.monotonic() < deadline:
+        try:
+            ready = window.evaluate_js("location.pathname === '/' && !!window.PR?.lib?.openNaming && PR.lib.items.length > 0")
+        except Exception:
+            ready = False
+        if ready:
+            break
+        time.sleep(.1)
+    checks['naming_library_ready'] = bool(ready)
+    if not ready:
+        return
+    pid = json.dumps(paper_id)
+    reviewed = json.dumps('地理信息与生态环境：中文文件名验证', ensure_ascii=True)
+    window.evaluate_js('PR.lib.openNaming([' + pid + '])')
+    checks['naming_local_preview_visible'] = wait_for_ui("!!document.querySelector('#namingDlg.open [data-naming-title]')")
+    checks['naming_original_filename_visible'] = window.evaluate_js("document.querySelector('#namingDlg').textContent.includes('1-s2.0-standalone-test.pdf')")
+    checks['naming_preview_does_not_apply'] = window.evaluate_js('!PR.lib.byId(' + pid + ').naming?.title')
+    window.evaluate_js('''(() => {
+        const input = document.querySelector('[data-naming-title]');
+        input.value = ''' + reviewed + ''';
+        input.dispatchEvent(new Event('input', {bubbles:true}));
+        document.querySelector('#namingSave').click();
+    })()''')
+    checks['naming_reviewed_name_applied'] = wait_for_ui('!document.querySelector("#namingDlg.open") && PR.lib.byId(' + pid + ').display_title === ' + reviewed)
+    checks['naming_display_name_visible'] = window.evaluate_js('document.querySelector("#list").textContent.includes(' + reviewed + ')')
+    window.evaluate_js('PR.lib.openNaming([' + pid + '])')
+    checks['naming_reopen_preserves_title'] = wait_for_ui('document.querySelector("#namingDlg.open [data-naming-title]")?.value === ' + reviewed)
+    window.evaluate_js('''(() => {
+        const input = document.querySelector('[data-naming-title]');
+        input.value = 'Cancelled name must not persist';
+        input.dispatchEvent(new Event('input', {bubbles:true}));
+        document.querySelector('[data-naming-close]').click();
+    })()''')
+    checks['naming_cancel_preserves_reviewed_title'] = wait_for_ui('!document.querySelector("#namingDlg.open") && PR.lib.byId(' + pid + ').display_title === ' + reviewed)
+    window.load_url(url + '/read/' + paper_id)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        try:
+            if window.evaluate_js('document.querySelector(".bar-title")?.textContent === ' + reviewed):
+                break
+        except Exception:
+            pass
+        time.sleep(.1)
+    checks['naming_reader_bar_uses_reviewed_title'] = window.evaluate_js('document.querySelector(".bar-title")?.textContent === ' + reviewed)
+    checks['naming_reader_retains_original_details'] = window.evaluate_js('document.querySelector(".paper-head h1")?.textContent === ' + reviewed + ' && document.querySelector(".paper-information").textContent.includes("1-s2.0-standalone-test")')
+
+
 def check_window(home: Path, url: str, paper_id: str, checks: dict):
     """Exercise the actual WebView2 window in source and frozen builds."""
     window = create_window(home, url + '/read/' + paper_id, 'Folio Read · 桌面验证')
@@ -527,6 +579,7 @@ def check_window(home: Path, url: str, paper_id: str, checks: dict):
                         return opened && getComputedStyle(document.querySelector('.knowledge-collection')).display === 'none' &&
                             document.querySelector('#researchRecords').textContent.includes('建立自己的研究主题');
                     })()''')
+            check_pdf_naming(window, url, paper_id, checks, wait_for_ui)
         except Exception as exc:
             checks['native_window_test'] = False
             logging.exception('独立窗口验证失败：%s', exc)
@@ -629,7 +682,7 @@ def smoke_test(report: Path):
     writer.write(buffer)
     httpd, app, url = start_server()
     try:
-        ws, fresh = app.lib.create_from_pdf(buffer.getvalue(), 'standalone-test.pdf')
+        ws, fresh = app.lib.create_from_pdf(buffer.getvalue(), '1-s2.0-standalone-test.pdf')
         pages = pdfwork.prepare(ws.root)
         ws.update('paper', lambda p: p['meta'].update(pages=pages, page_count=len(pages)))
         ws.update('paper', lambda p: p.update(blocks=[
@@ -698,7 +751,16 @@ def smoke_test(report: Path):
                     'url': '/read/' + ws.id + '#b-fig1', 'quote': 'Figure 1. Standalone image test.'}]}]}],
                 'rows': [], 'followups': ['继续核对这条资料']},
         })
+        original_paper = ws.load('paper')
         check_window(config.HOME, url, ws.id, checks)
+        with urllib.request.urlopen(url + '/api/p/' + ws.id + '/pdf', timeout=10) as response:
+            checks['naming_download_original_pdf_bytes'] = response.read() == buffer.getvalue()
+            disposition = response.headers.get('Content-Disposition', '')
+            decoded = unquote(disposition)
+            checks['naming_download_utf8_filename'] = "filename*=UTF-8''" in disposition and '地理信息与生态环境' in decoded and '.pdf' in decoded
+        checks['naming_source_and_translation_unchanged'] = ws.load('paper') == original_paper and (ws.root / 'source.pdf').read_bytes() == buffer.getvalue()
+        named_item = ws.load('item').get('naming') or {}
+        checks['naming_original_provenance_preserved'] = named_item.get('original_filename') == '1-s2.0-standalone-test.pdf' and bool(named_item.get('original_title'))
         write_json_atomic(report, {'status': 'passed' if all(checks.values()) else 'failed', 'at': now_iso(), 'home': str(config.HOME), 'url': url, 'checks': checks})
         if not all(checks.values()):
             return 1

@@ -1,0 +1,107 @@
+name: Windows test release build
+
+on:
+  push:
+    branches: ['release/v1.1.0-test.2']
+    paths: ['.github/workflows/windows-release.yml', 'pyproject.toml', 'easyread/**', 'scripts/build_windows.py', 'desktop_launcher.py']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      PYTHONIOENCODING: utf-8
+      EASYREAD_LIBRARY: ${{ github.workspace }}/ci-library
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install clean build dependencies
+        run: |
+          python -m venv .venv-release
+          .venv-release/Scripts/python.exe -m pip install ".[windows-build]"
+      - name: Python regression tests
+        run: .venv-release/Scripts/python.exe -m unittest discover tests -v
+      - name: Frontend regression tests
+        shell: bash
+        run: |
+          for test in test_chat_export test_markup_links test_mobile test_mobile_drive test_mobile_folder_import test_android_drive test_citations test_outline test_mobile_knowledge test_mobile_organization test_mobile_organization_drive test_mobile_organization_ui test_mobile_naming; do
+            node "tests/$test.cjs" || exit 1
+          done
+      - name: Build portable Windows application
+        run: .venv-release/Scripts/python.exe scripts/build_windows.py
+      - name: Verify ZIP and record build provenance
+        shell: pwsh
+        run: |
+          .venv-release/Scripts/python.exe -c "import zipfile; z=zipfile.ZipFile('dist/FolioRead-Windows.zip'); assert z.testzip() is None; assert 'FolioRead-Windows/FolioRead.exe' in z.namelist(); assert 'FolioRead-Windows/LICENSE' in z.namelist(); assert any('第三方许可' in n for n in z.namelist()); print('ZIP verified')"
+          @(
+            "Release: v1.1.0-test.2",
+            "Application version: 1.1.0.dev2",
+            "Commit: $env:GITHUB_SHA",
+            "Run: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID",
+            "Platform: Windows x64 portable",
+            "Windows binaries are not Authenticode-signed. Native smoke results are attached separately."
+          ) | Set-Content -Encoding utf8 dist/BUILD-INFO.txt
+          $hashes = Get-FileHash dist/FolioRead.exe,dist/FolioRead-Windows.zip -Algorithm SHA256
+          $hashes | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content -Encoding ascii dist/SHA256SUMS.txt
+      - name: Prepare hosted runner display for wide-window checks
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          Write-Output "Initial display: $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)"
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Write-Output "Test display: $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)"
+      - name: Test packaged EXE in isolated data directory
+        id: smoke
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path dist/FolioRead.exe).Path
+          $dataDir = Join-Path $env:RUNNER_TEMP 'folio-native-smoke'
+          $report = Join-Path $env:RUNNER_TEMP 'folio-native-smoke.json'
+          New-Item -ItemType Directory -Force $dataDir | Out-Null
+          $env:EASYREAD_LIBRARY = Join-Path $dataDir 'library'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--data-dir', $dataDir, '--smoke-test', $report) -PassThru
+          if (-not $process.WaitForExit(180000)) {
+            Stop-Process -Id $process.Id -Force
+            throw 'Native EXE smoke test timed out after 180 seconds.'
+          }
+          if (Test-Path $report) { Get-Content $report }
+          if ($process.ExitCode -ne 0) { throw "Native EXE smoke test exit code: $($process.ExitCode)" }
+          if (-not (Test-Path $report)) { throw 'Native EXE smoke report missing.' }
+          $result = Get-Content $report -Raw | ConvertFrom-Json
+          if ($result.status -ne 'passed') { throw 'Native EXE smoke checks did not all pass.' }
+      - name: Record native validation result
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path dist/BUILD-INFO.txt) {
+            "Native EXE smoke outcome: ${{ steps.smoke.outcome }}" | Add-Content -Encoding utf8 dist/BUILD-INFO.txt
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: folio-windows-native-smoke
+          path: |
+            ${{ runner.temp }}/folio-native-smoke.json
+            ${{ runner.temp }}/folio-native-smoke/easyread.log
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: folio-read-windows-v1.1.0-test.2
+          path: |
+            dist/FolioRead.exe
+            dist/FolioRead-Windows.zip
+            dist/SHA256SUMS.txt
+            dist/BUILD-INFO.txt
+          if-no-files-found: error
+          retention-days: 30
