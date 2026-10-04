@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 25
     env:
       PYTHONIOENCODING: utf-8
-      EASYREAD_LIBRARY: ${{ runner.temp }}/folio-release-tests/library
+      EASYREAD_LIBRARY: ${{ github.workspace }}/ci-library
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
