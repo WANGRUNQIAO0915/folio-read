@@ -56,7 +56,7 @@ async function post(route,body){return page.evaluate(async({route,body})=>{const
 async function openOne(){await page.locator('#list .row').first().click();await page.locator('#detail [data-organize-paper]').click();await page.locator('#organizationDlg.open').waitFor();}
 async function cancel(){await page.locator('#organizationDlg [data-org-close]').first().click();await page.locator('#organizationDlg.open').waitFor({state:'hidden'});}
 async function current(){return page.evaluate(()=>PR.lib.items);}
-async function prepare(){await page.locator('#orgSave').waitFor({state:'visible'});await wait(()=>page.locator('#orgSave').isEnabled(),'AI recommendation');assert.match(await page.locator('#orgPayload').innerText(),/Folio Offline Regression Fixture/);}
+async function prepare(){await page.locator('#orgSave').waitFor({state:'visible'});await wait(()=>page.locator('#orgSave').isEnabled(),'AI recommendation');assert.match(await page.locator('#orgPayload').textContent(),/Folio Offline Regression Fixture/);}
 (async()=>{try{
   execFileSync(PYTHON,[support,'fixture',fixture],{cwd:temp,env});
   server=spawn(PYTHON,[support,'serve',guard,calls],{cwd:temp,env,stdio:['ignore','pipe','pipe']});let output='';
