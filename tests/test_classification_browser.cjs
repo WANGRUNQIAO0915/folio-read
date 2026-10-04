@@ -34,6 +34,8 @@ async function prepare(){await page.locator('#orgAI').click();await page.locator
   await page.locator('[data-folder-create]').first().click();await page.locator('.cf-input').fill('手动资料');await page.locator('[data-cf="ok"]').click();
   await page.waitForFunction(()=>Object.values(PR.lib.organization.folders).some(f=>f.name==='手动资料'));
   let state=await page.evaluate(()=>PR.lib.organization);const fid=Object.keys(state.folders)[0];await page.reload();await page.locator('[data-folder="'+fid+'"]').waitFor();
+  assert.ok(await page.locator('[data-folder="'+fid+'"] .t').evaluate(el=>el.getBoundingClientRect().width)>80,'folder name retains readable width beside menu button');
+  assert.ok(await page.locator('[data-folder-more="'+fid+'"]').evaluate(el=>el.getBoundingClientRect().width)<=24,'folder menu stays compact');
   // Import into the chosen logical folder without AI.
   await page.locator('#importBtn').click();await page.locator('#importFolder').selectOption(fid);await page.locator('#fileInput').setInputFiles(fixture);
   await page.locator('#list .row').waitFor();let items=await current(),pid=items[0].id;assert.equal(items[0].folder_id,fid);assert.equal(countCalls(),0);
@@ -49,7 +51,7 @@ async function prepare(){await page.locator('#orgAI').click();await page.locator
   // Explicit opt-in + rapid repeated clicks sends only once. Result is reviewed first.
   await openOne();await prepare();await page.locator('#orgConsent').check();await page.locator('#orgSend').evaluate(el=>{el.click();el.click();});
   await page.locator('.org-message').waitFor();assert.equal(countCalls(),1);assert.deepEqual((await current())[0].tags,['遥感','城市']);
-  await page.locator('[data-org-tags]').fill('人工复核, GIS');await page.screenshot({path:path.join(artifacts,'desktop-ai-review.png'),fullPage:true});
+  await page.locator('[data-org-tags]').fill('人工复核, GIS');await page.screenshot({path:path.join(artifacts,'desktop-ai-review.png'),fullPage:true,animations:'disabled'});
   await page.locator('#orgSave').click();await page.locator('#organizationDlg.open').waitFor({state:'hidden'});await page.waitForFunction(()=>PR.lib.items[0].tags.includes('人工复核'));assert.equal((await current())[0].tags.length,2);
   // Failure and cancellation during request both preserve previous assignment.
   await context.route('**/api/classification/send',r=>r.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:'模拟服务失败'})}));
@@ -69,6 +71,6 @@ async function prepare(){await page.locator('#orgAI').click();await page.locator
   await page.locator('#batchSelect').click();for(const input of await page.locator('[data-batch]').all())await input.check();await page.locator('#organizeBtn').click();assert.equal(await page.locator('[data-org-index]').count(),2);
   await page.locator('#orgBatchFolder').selectOption(fid);await page.locator('#orgBatchSet').click();await page.locator('#orgSave').click();await page.locator('#organizationDlg.open').waitFor({state:'hidden'});await page.waitForFunction(fid=>PR.lib.items.every(i=>i.folder_id===fid),fid);
   await page.locator('#organizeBtn').click();await prepare();await page.locator('#orgConsent').check();await page.locator('#orgSend').click();await page.locator('.org-message').waitFor();assert.equal(await page.locator('[data-org-index]').count(),2);assert.equal(countCalls(),2);await cancel();assert((await current()).every(i=>i.folder_id===fid));
-  await page.screenshot({path:path.join(artifacts,'desktop-folders.png'),fullPage:true});assert.deepEqual(errors,[]);
+  await page.screenshot({path:path.join(artifacts,'desktop-folders.png'),fullPage:true,animations:'disabled'});assert.deepEqual(errors,[]);
   console.log('Desktop classification browser: folder CRUD/import/move/tags, AI opt-in/review/cancel/error/repeat, persistence passed. No real provider or Google calls.');
 }finally{if(browser)await browser.close();if(server){server.kill('SIGTERM');await new Promise(resolve=>server.once('exit',resolve));}}})().catch(error=>{console.error(error);process.exitCode=1;});

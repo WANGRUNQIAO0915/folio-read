@@ -253,7 +253,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .search-hit:hover { color: var(--ink); text-decoration: underline; }
 
 /* Shared-library organization is distinct from multi-valued tags. */
-.folder-more { display: flex; padding: 4px; color: var(--ink-3); border-radius: 5px; }
+.side .srow .folder-more { display: flex; width: 22px; height: 22px; flex: none; padding: 4px; color: var(--ink-3); border-radius: 5px; }
 .folder-more:hover { background: var(--surface-2); }
 .paper-thumb { position: relative; }
 .batch-check { position: absolute; z-index: 1; top: -7px; left: -7px; width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
