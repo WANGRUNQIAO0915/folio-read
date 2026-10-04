@@ -35,6 +35,12 @@ const preview=A.classificationPreview([paper],base);const bounded=A.classificati
 assert.equal(requests,0);assert.equal(preview.provider,'model.example');assert.equal(preview.model,'custom-model');assert(preview.messages[1].content.includes('Evidence only'));assert(!JSON.stringify(preview).includes('device-secret'));
 await assert.rejects(A.classify(preview),/明确同意/);assert.equal(requests,0);
 const suggestions=await A.classify(preview,{consent:true});assert.equal(suggestions[0].tags[0],'Review');assert.equal(base.assignments.paper.tags[0],'Satellite','AI response never applies itself');
+assert.equal(preview.allow_new_folders,false);assert.match(preview.messages[0].content,/0–4/);assert.match(preview.messages[0].content,/不要凑满/);assert(preview.existing_tags.includes('Satellite'));
+response={suggestions:[{paper_id:'paper',folder_id:null,folder_name:'Invented topic',tags:['satellite','A','B','C','D','E']}]};
+let compact=await A.classify(preview,{consent:true});assert.deepEqual(Array.from(compact[0].tags),['Satellite','A','B','C']);assert.equal(compact[0].folder_id,folder);assert.equal(compact[0].folder_name,'');
+response={suggestions:[{paper_id:'paper',folder_id:null,folder_name:'森林',tags:[]}]};compact=await A.classify(preview,{consent:true});assert.equal(compact[0].folder_id,folder);assert.equal(compact[0].tags.length,0,'No tag quota to fill');
+response={suggestions:[{paper_id:'paper',folder_id:null,folder_name:'New topic',tags:['one']}]};compact=await A.classify(A.classificationPreview([paper],base,{allow_new_folders:true}),{consent:true});assert.equal(compact[0].folder_name,'New topic');assert.equal(compact[0].tags.length,1);
+const batch=A.classificationPreview([paper,{...paper,paper_id:'paper2'}],base,{allow_new_folders:true});response={suggestions:[{paper_id:'paper',folder_name:'First',tags:[]},{paper_id:'paper2',folder_name:'Second',tags:[]}]};await assert.rejects(A.classify(batch,{consent:true}),/最多建议 1/);
 response={suggestions:[{paper_id:'intruder',tags:[]}]};await assert.rejects(A.classify(preview,{consent:true}),/标识/);
 const controller=new AbortController();controller.abort();const before=requests;await assert.rejects(A.classify(preview,{consent:true,signal:controller.signal}),/取消/);assert.equal(requests,before);
 A.setConfig({model:'changed'});await assert.rejects(A.classify(preview,{consent:true}),/配置已变化/);assert.equal(requests,before);

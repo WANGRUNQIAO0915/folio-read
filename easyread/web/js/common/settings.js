@@ -127,18 +127,22 @@
       '<label class="field"><span>模型</span>' + model + "</label></div>" +
       (p && !p.key ? "" : '<label class="field"><span>API Key' + (o.has_key ? "（已保存，留空不改）" : "") + '</span><input class="input" type="password" data-k="openai.api_key" value="' + PR.esc(o.api_key) + '" placeholder="sk-…" autocomplete="off"></label>') +
       '<label class="check" style="margin:0 0 10px"><input type="checkbox" data-k="openai.vision"' + (o.vision ? " checked" : "") + ">模型能看图（把原页图一起发过去，公式和表格更准）</label>" +
+      (o.preset === "llamacpp" ? '<label class="field"><span>深度思考</span><select class="input" data-k="openai.reasoning_effort">' + PR.opt([["none", "关闭（翻译推荐）"], ["", "使用模型默认设置"]], o.reasoning_effort || "") + '</select></label>' : "") +
       '<p class="hint">Key 只存在本机的 config.json 里，只发给你填的这个地址。这里存的 Key，“问 AI”用同一家服务时也能直接用。</p>';
   }
 
   function pickPreset(s, id) {
     const p = s.presets.find((x) => x.id === id);
     const o = s.cfg.openai;
+    if (id === o.preset && o.base_url && o.model) return;
     o.preset = id;
     if (p) {
       o.base_url = p.base_url;
       const om = s.found && s.found.ollama && s.found.ollama.models;
       o.model = p.id === "ollama" && om && om.length && !om.includes(p.model) ? om[0] : p.model;
-      o.vision = ["gemini", "openai", "anthropic"].includes(p.id);
+      o.vision = p.vision ?? ["gemini", "openai", "anthropic"].includes(p.id);
+      o.reasoning_effort = p.reasoning_effort || "";
+      if (p.group === "local") { s.cfg.concurrency = 1; s.cfg.batch_pages = 1; }
     }
     const saved = (o.saved_keys || []).includes(o.preset);  // 每家的 Key 分开存，换回来不用重填
     o.api_key = saved ? "••••" : ""; o.has_key = saved;
@@ -147,9 +151,9 @@
   function collect(state) {
     if (state.tab !== "engine") {  // 不在这一页时，用切页时存下的值
       const c = state.cfg, o = c.openai;
-      return { engine: c.engine, batch_pages: c.batch_pages, concurrency: c.concurrency, auto_translate: c.auto_translate,
+      return { engine: c.engine, batch_pages: c.batch_pages, concurrency: c.concurrency, auto_translate: c.auto_translate, source_checks: !!c.source_checks,
         claude: { model: c.claude.model, command: c.claude.command }, codex: { model: c.codex.model, command: c.codex.command },
-        openai: { preset: o.preset, base_url: o.base_url, model: o.model, api_key: o.api_key, vision: o.vision } };
+        openai: { preset: o.preset, base_url: o.base_url, model: o.model, api_key: o.api_key, vision: o.vision, reasoning_effort: o.reasoning_effort || "" } };
     }
     const patch ={ engine: state.cfg.engine, claude: {}, codex: {}, openai: { preset: state.cfg.openai.preset } };
     PR.$$("[data-k]", dlg()).forEach((el) => {
@@ -177,12 +181,13 @@
         '<label class="field"><span>每次交给模型的页数</span><select class="input" data-k="batch_pages">' + PR.opt([[1, "1 页（最稳）"], [2, "2 页（推荐）"], [3, "3 页"], [4, "4 页"]], s.cfg.batch_pages) + "</select></label>" +
         '<label class="field"><span>同时翻译几批</span><select class="input" data-k="concurrency">' + PR.opt([[1, "1（本机 CLI 推荐）"], [2, "2"], [3, "3（API 推荐）"], [4, "4"], [6, "6（最快）"]], s.cfg.concurrency) + "</select></label></div>" +
         '<label class="check" style="margin-top:0"><input type="checkbox" data-k="auto_translate"' + (s.cfg.auto_translate ? " checked" : "") + ">导入后自动开始翻译</label>" +
+        '<label class="check" style="margin-top:0"><input type="checkbox" data-k="source_checks"' + (s.cfg.source_checks ? " checked" : "") + '>原文核对提示（可选）</label><p class="hint">开启后，翻译时让 AI 额外指出原文可能的问题，并在阅读页显示已有核对提示。</p>' +
         '<p class="hint" style="margin-top:12px">文献库位置：' + PR.esc(s.cfg.library_dir) + "</p>";
     },
     collect,
     sync(s) {
       const p = collect(s);
-      Object.assign(s.cfg, { engine: p.engine, batch_pages: p.batch_pages ?? s.cfg.batch_pages, concurrency: p.concurrency ?? s.cfg.concurrency, auto_translate: p.auto_translate ?? s.cfg.auto_translate,
+      Object.assign(s.cfg, { engine: p.engine, batch_pages: p.batch_pages ?? s.cfg.batch_pages, concurrency: p.concurrency ?? s.cfg.concurrency, auto_translate: p.auto_translate ?? s.cfg.auto_translate, source_checks: p.source_checks ?? s.cfg.source_checks,
         claude: Object.assign({}, s.cfg.claude, p.claude), codex: Object.assign({}, s.cfg.codex, p.codex), openai: Object.assign({}, s.cfg.openai, p.openai) });
     },
     async click(e, s) {
@@ -197,7 +202,7 @@
             pickPreset(s, k === "paid" ? "deepseek" : ol ? "ollama" : "zhipu");
           }
         } else { s.cfg.engine = k; s.apiKind = null; }
-        if (s.cfg.engine === "openai" && s.cfg.concurrency < 2) s.cfg.concurrency = 3; if (s.cfg.engine !== "openai" && s.cfg.concurrency > 2) s.cfg.concurrency = 1; return true; }
+        return true; }
       const pre = e.target.closest("[data-preset]");
       if (pre) { this.sync(s); pickPreset(s, pre.dataset.preset); return true; }
       if (e.target.closest("#testBtn")) {

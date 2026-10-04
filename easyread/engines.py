@@ -169,6 +169,10 @@ def run_openai(c: dict, prompt: str, images: list[Path], cancel=None) -> str:
             {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(p.read_bytes()).decode()}}
             for p in images]
     body = {"model": c["model"], "temperature": 0.2, "messages": [{"role": "user", "content": content}]}
+    # llama.cpp supports disabling reasoning per request. Keep the shared
+    # server's reasoning defaults intact for other applications.
+    if c.get("preset") == "llamacpp" and c.get("reasoning_effort") == "none":
+        body["reasoning_effort"] = "none"
     headers = {"Content-Type": "application/json"}
     if c.get("api_key"):
         headers["Authorization"] = "Bearer " + c["api_key"]

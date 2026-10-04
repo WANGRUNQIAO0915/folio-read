@@ -67,6 +67,8 @@ def build(ws: Workspace, out: Path | None = None, assets: Path | None = None, ex
         else:
             images[rel] = _data_uri(src, "image/webp")
     data = {n: ws.load(n) for n in ("discussion", "reader", "layout", "item", "chat")}
+    from .source_checks import for_reader as discussion_for_reader
+    data["discussion"] = discussion_for_reader(data["discussion"])
     from .library import Library
     from .organization import Organization, assignment, paper_id, export_subset
     organization = export_subset(Organization(Library(ws.root.parent), [ws]).load(), [paper_id(ws)])

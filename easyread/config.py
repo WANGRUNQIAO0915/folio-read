@@ -27,6 +27,7 @@ DEFAULTS = {
     "port": 8766,
     "engine": "openai",          # 本机或 DeepSeek 等兼容接口；也可在设置切换 CLI
     "auto_translate": False,     # 先选好模型再开始翻译
+    "source_checks": False,      # 可选的原文内容核对，不影响译文完整性与格式检查
     "batch_pages": 1,            # 优先完整性；设置中可提高
     "concurrency": 1,            # 同时翻译几批
     "claude": {"command": "claude", "model": "", "extra_args": [], "timeout": 1200},

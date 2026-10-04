@@ -7,7 +7,7 @@ const w=dom.window, d=w.document;w.matchMedia=()=>({matches:false});w.HTMLElemen
 let org={schema:1,folders:{f1:{id:'f1',name:'已有文件夹',deleted:false,version:{at:'',id:''}}},assignments:{p001:{folder_id:'f1',tags:['原标签'],version:{at:'',id:''}}}}, saves=0,sends=0,cancels=0,mode='success',sendResolve;
 const base={id:'p001',organization_id:'p001',title_en:'Synthetic paper',tags:['原标签'],folder_id:'f1',status:'unread',notes:0,highlights:0,open_questions:0,discussions:0,abstract:'Synthetic abstract'};
 function snapshot(){return {...base,...org.assignments.p001};}
-let lastImport;
+let lastImport,lastPreview;
 w.fetch=async(url,options={})=>{
  const route=String(url).split('?')[0],body=typeof options.body==='string'?JSON.parse(options.body||'{}'):{};
  let data={};let ok=true;
@@ -16,7 +16,7 @@ w.fetch=async(url,options={})=>{
  else if(route==='/api/prefs')data={library:{cats:[],hidden:[],pinned:[]}};
  else if(route==='/api/import'){lastImport=String(url);data={id:'p001',new:false};}
  else if(route==='/api/organization/assign'){saves++;for(const a of body.assignments){if('expected_version' in a)assert.deepEqual(a.expected_version,org.assignments[a.paper_id].version);org.assignments[a.paper_id]={folder_id:a.folder_name?'f2':a.folder_id,tags:a.tags || org.assignments[a.paper_id].tags,version:{at:'2026-01-01T00:00:00Z',id:String(saves)}};if(a.folder_name)org.folders.f2={id:'f2',name:a.folder_name,deleted:false,version:{at:'',id:''}};}data=org;}
- else if(route==='/api/classification/preview')data={id:'test-preview',provider:'Synthetic',endpoint:'https://example.invalid/v1/chat/completions',model:'test',papers:[{paper_id:'p001'}],folders:[],messages:[{role:'user',content:'Synthetic paper\nEXACT DISCLOSED TEXT'}]};
+ else if(route==='/api/classification/preview'){lastPreview=body;data={id:'test-preview',provider:'Synthetic',endpoint:'https://example.invalid/v1/chat/completions',model:'test',allow_new_folders:body.allow_new_folders,papers:[{paper_id:'p001'}],folders:[],messages:[{role:'user',content:'Synthetic paper\nEXACT DISCLOSED TEXT'}]};}
  else if(route==='/api/classification/cancel'){cancels++;data={state:'cancelled'};}
  else if(route==='/api/classification/send'){sends++;if(mode==='pending')await new Promise(r=>sendResolve=r);if(mode==='fail'){ok=false;data={error:'模拟失败'};}else data={suggestions:[{paper_id:'p001',folder_id:null,folder_name:'模型建议',tags:['建议标签'],reason:'测试'}]};}
  return {ok,status:ok?200:400,json:async()=>JSON.parse(JSON.stringify(data))};
@@ -34,8 +34,8 @@ async function preview(){click('#orgAI');await tick();assert.equal(d.querySelect
  open();d.querySelector('[data-org-tags]').value='未保存';click('[data-org-close]');assert.equal(saves,0);assert.deepEqual(org.assignments.p001.tags,['原标签']);
  open();d.querySelector('[data-org-tags]').value='A, B, A';click('#orgSave');await tick();assert.equal(saves,1);assert.deepEqual(org.assignments.p001.tags,['A','B']);assert(!d.querySelector('#organizationDlg.open'));
  // Preview never sends; explicit consent required; repeat clicks coalesce.
- open();await preview();assert.equal(sends,0);click('[data-org-close]');await tick();assert.equal(sends,0);
- open();await preview();change('#orgConsent',true);click('#orgSend');click('#orgSend');await tick();assert.equal(sends,1);assert.equal(saves,1);assert.match(d.querySelector('.org-message').textContent,/尚未保存/);assert.equal(d.querySelector('[data-org-folder]').value,'__new__');assert.equal(d.querySelector('[data-org-name]').value,'模型建议');d.querySelector('[data-org-tags]').value='已复核';click('#orgSave');await tick();assert.equal(saves,2);assert.deepEqual(org.assignments.p001.tags,['已复核']);
+ open();assert.equal(d.querySelector('#orgAllowNewFolders').checked,false);await preview();assert.equal(lastPreview.allow_new_folders,false);assert.equal(sends,0);click('[data-org-close]');await tick();assert.equal(sends,0);
+ open();change('#orgAllowNewFolders',true);await preview();assert.equal(lastPreview.allow_new_folders,true);change('#orgConsent',true);click('#orgSend');click('#orgSend');await tick();assert.equal(sends,1);assert.equal(saves,1);assert.match(d.querySelector('.org-message').textContent,/尚未保存/);assert.equal(d.querySelector('[data-org-folder]').value,'__new__');assert.equal(d.querySelector('[data-org-name]').value,'模型建议');d.querySelector('[data-org-tags]').value='已复核';click('#orgSave');await tick();assert.equal(saves,2);assert.deepEqual(org.assignments.p001.tags,['已复核']);
  // Failed send leaves editor usable and preserves data.
  mode='fail';open();await preview();change('#orgConsent',true);click('#orgSend');await tick();assert.match(d.querySelector('#orgError').textContent,/模拟失败/);assert.equal(saves,2);click('[data-org-close]');await tick();
  // Late response after Cancel must not reopen the editor or apply changes.
