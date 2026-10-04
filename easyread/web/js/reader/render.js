@@ -174,10 +174,11 @@
     const jump = (b, label) => b ? '<button class="btn sm line" data-t="reading-jump" data-reading-jump="' + PR.esc(b.id) + '">' + label + ' ↓</button>' : '';
     const metaLine = [authors[0] && (authors[0] + (authors.length > 1 ? ' 等 · ' + authors.length + ' 位作者' : '')), pages && (m.text_status==='original'?'PDF 原文 · '+pages+' 页':done >= pages ? '翻译完成 · ' + pages + ' 页' : '已译 ' + done + ' / ' + pages + ' 页')].filter(Boolean).map(PR.esc).join('　·　');
     return '<header class="paper-head" id="b-head" data-id="head">' + (kicker ? '<div class="kicker">' + kicker + "</div>" : "") +
-      "<h1>" + PR.esc(m.title_zh || m.title_en || "（正在识别标题）") + "</h1>" +
+      "<h1>" + PR.esc(S.item?.naming?.title || m.title_zh || m.title_en || "（正在识别标题）") + "</h1>" +
+      (S.item?.naming?.title ? '<p class="paper-naming-source">' + (S.item.naming.source === 'ai_translation' ? 'AI 翻译（非官方中文题名）' : '已确认的显示名称 · 可在文献库修改') + '</p>' : '') +
       '<p class="paper-meta-line">' + metaLine + '</p><div class="paper-head-actions">' + jump(abstract, '跳到摘要') + jump(body, '进入正文') +
       '</div><details class="paper-information"><summary>文章信息与原文链接</summary><div class="paper-information-body">' +
-      (m.title_zh && m.title_en ? '<p class="title-en" lang="en">' + PR.esc(m.title_en) + "</p>" : "") +
+      ((S.item?.naming?.title || m.title_zh) && m.title_en ? '<p class="title-en" lang="en">' + PR.esc(m.title_en) + "</p>" : "") +
       (by ? '<p class="byline">' + by + "</p>" : "") + '<p class="scope">' + scope + "</p>" + window.FolioJournal.panel(m,PR.pid,PR.store.mode==='server') + linkIndex + '</div></details>' + creditHtml() + "</header>";
   }
 

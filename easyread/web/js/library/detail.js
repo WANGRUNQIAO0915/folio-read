@@ -77,11 +77,17 @@
       '<div class="cover">' + thumb + '<div class="actions">' +
       '<a class="btn accent" href="/read/' + i.id + '">' + PR.icon("book", "sm") + readLabel + "</a>" +
       '<a class="btn line" href="/p/' + i.id + '/source.pdf" target="_blank" rel="noopener">' + PR.icon("pdf", "sm") + "打开原 PDF</a>" +
+      '<a class="btn line" href="/api/p/' + encodeURIComponent(i.id) + '/pdf" download title="' + PR.esc(i.pdf_filename || '') + '">' + PR.icon('download', 'sm') + '下载原 PDF</a>' +
       '<div class="act-row"><button class="btn line" data-d="cite" title="复制参考文献格式：GB/T 7714、APA、BibTeX">' + PR.icon("copy", "sm") + "复制引用</button>" +
       '<button class="btn icon line" data-d="star" title="星标（S）" style="color:' + (i.starred ? "#c9a24a" : "") + '">' + PR.icon("star", "sm").replace('class="i sm"', 'class="i sm"' + (i.starred ? ' style="fill:currentColor"' : "")) + "</button>" +
       '<button class="btn icon line" data-d="more" title="更多：导出、打开文件夹、回收站">' + PR.icon("more", "sm") + "</button></div></div></div>" +
-      '<div class="title-zh" contenteditable="plaintext-only" data-meta="title_zh" spellcheck="false">' + PR.esc(i.title_zh || "") + "</div>" +
-      '<div class="title-en" contenteditable="plaintext-only" data-meta="title_en" lang="en" spellcheck="false">' + PR.esc(i.title_en || "") + "</div>" +
+      '<div class="title-zh naming-display">' + PR.esc(i.display_title || i.title_zh || i.title_en || "（未命名）") + '</div>' +
+      '<div class="naming-detail"><button class="btn sm line" data-name-paper="' + PR.esc(i.id) + '">' + PR.icon('edit', 'sm') + '中文命名</button>' +
+      (i.naming?.source ? '<span class="hint">' + PR.esc(L.namingSourceLabel ? L.namingSourceLabel(i.naming.source) : i.naming.source) + '</span>' : '') + '</div>' +
+      (i.pdf_filename ? '<p class="hint naming-filename">下载文件名：' + PR.esc(i.pdf_filename) + '</p>' : '') +
+      '<details class="naming-metadata" open><summary>原标题与书目元数据</summary><label>原中文标题</label>' +
+      '<div class="title-zh" contenteditable="plaintext-only" data-meta="title_zh" spellcheck="false">' + PR.esc(i.title_zh || "") + "</div><label>原文标题</label>" +
+      '<div class="title-en" contenteditable="plaintext-only" data-meta="title_en" lang="en" spellcheck="false">' + PR.esc(i.title_en || "") + "</div></details>" +
       (L.organizationDetail ? L.organizationDetail(i) : '') + '<div class="cats">' + cats + '<input id="catInput" placeholder="＋ 新标签" maxlength="30"></div>' +
       '<div class="seg">' + status + "</div>" +
       '<div class="kv"><span>作者</span><span contenteditable="plaintext-only" data-meta="authors">' + PR.esc(i.authors) + "</span>" +
@@ -148,6 +154,8 @@
     PR.menu(where, [
       { label: "打开阅读", icon: "book", kbd: "Enter", fn: () => L.openReader(id) },
       { label: "打开原 PDF", icon: "pdf", fn: () => window.open("/p/" + id + "/source.pdf") },
+      { label: "下载原 PDF（使用显示名称）", icon: "download", fn: () => { location.href = "/api/p/" + encodeURIComponent(id) + "/pdf"; } },
+      { label: "中文命名 / 编辑下载名", icon: "edit", fn: () => L.openNaming([id]) },
       "-",
       { label: i.starred ? "取消星标" : "加星标", icon: "star", kbd: "S", fn: () => L.patch(id, { starred: !i.starred }) },
       { label: L.side.pinned.includes("p:" + id) ? "取消置顶" : "置顶到侧栏", icon: "pin", fn: () => L.togglePin("p:" + id) },

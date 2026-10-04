@@ -466,10 +466,17 @@ class Drive:
         return raw
 
     @staticmethod
-    def content_hash(data):
+    def article_content_hash(data):
+        """Naming-independent baseline, byte-compatible with pre-naming hashes."""
         content={k:data[k] for k in ('paper','images','discussion')}
         content['item']={k:data.get('item',{})[k] for k in ('status','starred','rating','meta_override') if k in data.get('item',{})}
         return hashlib.sha256(P.canonical(content).encode()).hexdigest()
+
+    @staticmethod
+    def content_hash(data):
+        # Reviewed names use independent snapshots. Publishing a name must never
+        # create a later full-paper snapshot containing an older translation.
+        return Drive.article_content_hash(data)
 
     @staticmethod
     def legacy_content_hash(data):
@@ -545,14 +552,22 @@ class Drive:
         parent = self.folder(files)
         self.upload_source(ws,pid,files,parent)
         content_hash = self.content_hash(data)
+        article_hash = self.article_content_hash(data)
         legacy_data = dict(data, item=ws.load('item') or {})
-        unchanged_local = cloud.get('content_hash') in (content_hash, self.legacy_content_hash(legacy_data))
+        unchanged_local = cloud.get('content_hash') == content_hash
+        unchanged_article = unchanged_local or cloud.get('article_content_hash') == article_hash or cloud.get('content_hash') in (article_hash, self.legacy_content_hash(legacy_data))
         observed_remote = cloud.get('remote_content_hash', cloud.get('content_hash'))
         remote_hash = (remote or {}).get('appProperties', {}).get('folioContent')
-        if remote and cloud.get('content_hash') and 'remote_content_hash' not in cloud and not unchanged_local and remote_hash not in (None, cloud['content_hash'], content_hash):
-            # Old sidebar tag edits also changed item.json. The immutable old
-            # snapshot is the only reliable baseline for distinguishing those
-            # edits from changed article content during the hash migration.
+        remote_changed = remote and cloud.get('content_hash') and remote_hash not in (None, content_hash, observed_remote)
+        if remote and data.get('item', {}).get('naming') and not cloud.get('content_hash') and remote_hash not in (None, content_hash):
+            # Same PDF imported independently on two devices has no shared base.
+            # Do not replace a cloud translation merely to publish a local name.
+            remote_bundle = P.normalize(self.download(remote))
+            if remote_bundle['paper_id'] != pid or self.article_content_hash(remote_bundle) != article_hash:
+                raise ValueError('同一论文在云端已有不同正文且缺少同步基线；已保留本机名称和两端译文，请先核对并导入云端版本')
+        if remote_changed and not unchanged_article:
+            # Old baselines have no article-only hash. Resolve the immutable
+            # snapshot before deciding whether only the reviewed name changed.
             baseline_file = next((f for f in files if f.get('appProperties', {}).get('folioType') == 'paper'
                                   and f['appProperties'].get('folioPaperId') == pid
                                   and f['appProperties'].get('folioContent') == cloud['content_hash']), None)
@@ -561,10 +576,13 @@ class Drive:
             baseline = P.normalize(self.download(baseline_file))
             if baseline['paper_id'] != pid:
                 raise ValueError('旧版同步基线标识不匹配，已保留本机内容')
-            unchanged_local = self.content_hash(baseline) == content_hash
-        if remote and unchanged_local and remote_hash not in (None, content_hash, observed_remote):
+            unchanged_article = self.article_content_hash(baseline) == article_hash
+            if not unchanged_article:
+                raise ValueError('两端正文或资料均有更新；已保留本机名称和译文，请核对云端版本后再同步')
+        if remote_changed and unchanged_article:
             self.pull(remote['id'], files=files, update_content=True, expected_content=content_versions)
             data=self.bundle(ws);local=ws.load('reader');cloud=local.get('_cloud') or {};content_hash=self.content_hash(data)
+            article_hash = self.article_content_hash(data)
         if not remote or (remote['appProperties'].get('folioContent') != content_hash and cloud.get('content_hash') != content_hash):
             remote = self.upload((data['paper']['meta'].get('short_zh') or ws.id)[:60] + '.folio.json', data, dict(folioType='paper', folioPaperId=pid, folioContent=content_hash), parent)
             files.append(remote)
@@ -584,7 +602,7 @@ class Drive:
             merged = P.materialize([local, remote_data['reader']], events + pending)
             merged['rev'] = current.get('rev', 0) + 1
             merged['_cloud'] = dict(cloud, enabled=True, account=self.account['permissionId'], synced_once=True, pending=pending,
-                                     content_hash=content_hash, remote_content_hash=(remote or {}).get('appProperties', {}).get('folioContent'), synced_at=now_iso())
+                                     content_hash=content_hash, article_content_hash=article_hash, remote_content_hash=(remote or {}).get('appProperties', {}).get('folioContent'), synced_at=now_iso())
             ws._snapshot(); write_json_atomic(ws.reader_path, merged)
         self._merge_bundle_organization(remote_data)
         index=P.normalize(dict(remote_data, reader=merged, images={}))
@@ -592,13 +610,55 @@ class Drive:
         # for a folder rename, tag edit, or tombstone.
         index.pop('organization', None)
         index['item'].pop('tags', None)
+        index['item'].pop('naming', None)
         index['reader']['progress']=dict(block=None,ratio=0,at='')
         index_hash=hashlib.sha256(P.canonical(index).encode()).hexdigest()
         prior_index=self.latest_kind(fresh,pid,'index')
         if not prior_index or prior_index['appProperties'].get('folioContent')!=index_hash:
             fresh.append(self.upload((index['paper']['meta'].get('title_zh') or index['paper']['meta'].get('title_en') or ws.id)[:60]+'.knowledge.json',index,
                                      dict(folioType='index',folioPaperId=pid,folioContent=index_hash),parent))
-        return fresh
+        return self._sync_naming(ws, fresh, incoming=remote_data.get('item', {}).get('naming'))
+
+    def _sync_naming(self, ws, files, incoming=None, publish=True):
+        """Merge small immutable records without republishing article/PDF bytes."""
+        from .naming import clean_naming, merge_naming
+        from .organization import paper_id
+        pid = paper_id(ws)
+        bound = (ws.load('reader').get('_cloud') or {}).get('account')
+        if bound and bound != self.account['permissionId']:
+            raise ValueError('命名资料属于另一 Google 账号，请切回原账号')
+        values = [incoming]
+        known = set()
+        for file in files:
+            props = file.get('appProperties') or {}
+            if props.get('folioType') != 'naming' or props.get('folioPaperId') != pid:
+                continue
+            if int(file.get('size', 0)) > 16 * 1024:
+                raise ValueError('云端命名文件过大，请保留文件并核对')
+            data = self.download(file)
+            if not isinstance(data, dict) or data.get('schema') != 1 or data.get('kind') != 'folio-naming' or data.get('paper_id') != pid:
+                raise ValueError('云端命名文件标识无效，请保留文件并核对')
+            row = clean_naming(data.get('naming'))
+            if not row:
+                raise ValueError('云端命名记录无效，请保留文件并核对')
+            payload = {'schema': 1, 'kind': 'folio-naming', 'paper_id': pid, 'naming': row}
+            digest = hashlib.sha256(P.canonical(payload).encode()).hexdigest()
+            if props.get('folioContent') and props['folioContent'] != digest:
+                raise ValueError('云端命名记录校验失败，请保留文件并核对')
+            known.add(digest); values.append(row)
+        with dir_lock(ws.root):
+            item = ws.load('item') or {}
+            naming = merge_naming(item.get('naming'), *values)
+            if naming and item.get('naming') != naming:
+                item['naming'] = naming
+                write_json_atomic(ws.item_path, item)
+        if publish and naming:
+            payload = {'schema': 1, 'kind': 'folio-naming', 'paper_id': pid, 'naming': naming}
+            digest = hashlib.sha256(P.canonical(payload).encode()).hexdigest()
+            if digest not in known:
+                files.append(self.upload('naming-' + pid[:12] + '-' + str(uuid.uuid4()) + '.json', payload,
+                                         {'folioType': 'naming', 'folioPaperId': pid, 'folioContent': digest}, self.folder(files)))
+        return files
 
     def _organization_account(self, bind=False):
         """Logical metadata must not leak after switching the connected account."""
@@ -762,7 +822,16 @@ class Drive:
                     path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(raw)
                 write_json_atomic(ws.paper_path,data['paper'])
                 write_json_atomic(ws.discussion_path,data.get('discussion') or {})
-                write_json_atomic(ws.item_path,dict(ws.load('item'),**data.get('item',{})))
+                from .naming import merge_naming
+                current_item = ws.load('item') or {}
+                incoming_item = data.get('item') or {}
+                merged_item = dict(current_item, **incoming_item)
+                naming = merge_naming(current_item.get('naming'), incoming_item.get('naming'))
+                if naming:
+                    merged_item['naming'] = naming
+                else:
+                    merged_item.pop('naming', None)
+                write_json_atomic(ws.item_path, merged_item)
         if not (ws.root/'source.pdf').exists():
             source=self.source_bytes(files,pid)
             if source:
@@ -774,9 +843,10 @@ class Drive:
             merged = P.materialize([current, remote], cloud.get('pending', []))
             merged['rev'] = current.get('rev', 0) + 1
             merged['_cloud'] = dict(cloud, enabled=True, account=self.account['permissionId'], pending=cloud.get('pending', []),
-                                    synced_once=True, content_hash=self.content_hash(data), remote_content_hash=file.get('appProperties', {}).get('folioContent'))
+                                    synced_once=True, content_hash=self.content_hash(data), article_content_hash=self.article_content_hash(data), remote_content_hash=file.get('appProperties', {}).get('folioContent'))
             ws._snapshot(); write_json_atomic(ws.reader_path, merged)
         self._merge_bundle_organization(data)
+        self._sync_naming(ws, files, incoming=data.get('item', {}).get('naming'), publish=False)
         self.files = files; self.message = '论文已下载到 Windows，可离线阅读'
 
     def run(self, action, *args):

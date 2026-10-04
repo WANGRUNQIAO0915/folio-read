@@ -137,8 +137,10 @@
     const bytes=new TextEncoder().encode(C.canonical(value));
     return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(x=>x.toString(16).padStart(2,'0')).join('');
   }
-  const contentHash=data=>hashValue({paper:data.paper,images:data.images,discussion:data.discussion,
+  const articleContentHash=data=>hashValue({paper:data.paper,images:data.images,discussion:data.discussion,
     item:Object.fromEntries(['status','starred','rating','meta_override'].filter(k=>Object.hasOwn(data.item || {},k)).map(k=>[k,data.item[k]]))});
+  // Names have independent immutable snapshots; their edits must never upload an article body.
+  const contentHash=articleContentHash;
   const legacyContentHash=data=>hashValue({paper:data.paper,images:data.images,discussion:data.discussion,
     item:Object.fromEntries(['tags','status','starred','rating','meta_override'].filter(k=>Object.hasOwn(data.item || {},k)).map(k=>[k,data.item[k]]))});
   async function folder(files) {
@@ -275,6 +277,7 @@
       const file=latestKind(files,id,'index'),prior=cached.find(x=>x.paper_id===id && x.bound_account===account.permissionId);
       const data=prior?.cloud_file_id===file.id ? prior:C.normalize(await download(file));
       if(data.paper_id!==id)throw new Error('云端知识索引标识不匹配。');
+      const naming=C.preferNaming(data.item?.naming,await namesFor(id,files));if(naming)data.item={...data.item,naming};
       data.cloud_file_id=file.id;data.bound_account=account.permissionId;
       // 阅读进度与批注使用事件日志合并，不依赖索引上传顺序。
       data.reader=C.materialize([data.reader],await opsFor(files,id));await S.saveIndex(data);
@@ -295,12 +298,31 @@
     }
     await S.setting(cacheKey,cache);return events;
   }
+  async function namesFor(id,files) {
+    let naming=null;
+    const key='drive-naming-cache:'+account.permissionId,cache=await S.setting(key)||{};
+    for(const file of files.filter(f=>f.appProperties?.folioType==='naming' && f.appProperties.folioPaperId===id)){
+      let value=cache[file.id];
+      if(!value){value=await download(file);if(value?.schema!==1 || value.kind!=='folio-naming' || value.paper_id!==id || !C.cleanNaming(value.naming))throw new Error('云盘名称记录格式无效，请保留文件并重试。');cache[file.id]=value;}
+      naming=C.preferNaming(naming,value.naming);
+    }
+    await S.setting(key,cache);return naming;
+  }
+  async function syncNaming(data,files,parent){
+    const remote=await namesFor(data.paper_id,files),naming=C.preferNaming(data.item?.naming,remote);
+    if(naming && C.canonical(naming)!==C.canonical(remote)){
+      const value={schema:1,kind:'folio-naming',paper_id:data.paper_id,naming};
+      const file=await upload('名称-'+data.paper_id+'.json',value,{folioType:'naming',folioPaperId:data.paper_id,folioContent:await hashValue(value)},parent);files.push(file);
+    }
+    return naming;
+  }
   async function getPaper(file,files) {
     const data=C.normalize(await download(file));
     if(data.paper_id!==file.appProperties.folioPaperId) throw new Error('云盘论文标识不匹配。');
+    const naming=C.preferNaming(data.item?.naming,await namesFor(data.paper_id,files));if(naming)data.item={...data.item,naming};
     if(data.organization&&S.mergeOrganization)await S.mergeOrganization(data.organization);
     data.reader=C.materialize([data.reader],await opsFor(files,data.paper_id));
-    data.bound_account=account.permissionId;data.pending=[];data.synced_once=true;data.cloud_file_id=file.id;data.cloud_content_hash=await contentHash(data);
+    data.bound_account=account.permissionId;data.pending=[];data.synced_once=true;data.cloud_file_id=file.id;data.cloud_content_hash=await contentHash(data);data.cloud_article_content_hash=await articleContentHash(data);
     return data;
   }
   async function syncPaper(data,files,deviceId) {
@@ -314,17 +336,34 @@
       const saved=await uploadSource(source,data.paper_id,sourceParent);files.push(saved);
       await S.source(data.paper_id,{...source,bound_account:account.permissionId});
     }
-    const bundle=C.normalize(data),hash=await contentHash(bundle);
-    let uploadContent=!remoteFile || data.content_dirty || (data.cloud_content_hash && hash!==data.cloud_content_hash && await legacyContentHash(bundle)!==data.cloud_content_hash);
-    if(uploadContent && remoteFile && data.cloud_content_hash && remoteFile.appProperties.folioContent && remoteFile.appProperties.folioContent!==data.cloud_content_hash) {
-      // Older clients included tags in their content hash. Compare the actual
-      // normalized body before treating a metadata/hash-format change as a conflict.
-      const current=await getPaper(remoteFile,files);
-      if(await contentHash(current)===hash)uploadContent=false;
-      else if(data.paper.meta.text_status==='original')throw new Error('另一端已更新正文，请先下载最新版后再修改正文。原稿和批注仍然保留。');
+    await syncNaming(data,files,parent);
+    const local=C.normalize(data),localArticle=await articleContentHash(local);
+    const expectedContent=C.canonical({paper:data.paper,images:data.images,discussion:data.discussion,item:data.item});
+    let bundle=local,uploadContent=!remoteFile;
+    if(remoteFile){
+      const current=await getPaper(remoteFile,files),remoteArticle=await articleContentHash(current);
+      let baseline=data.cloud_article_content_hash;
+      if(data.cloud_content_hash && [await contentHash(local),localArticle,await legacyContentHash(local)].includes(data.cloud_content_hash))baseline=localArticle;
+      if(!baseline && data.cloud_content_hash){
+        if(data.cloud_content_hash===localArticle || data.cloud_content_hash===await legacyContentHash(local))baseline=localArticle;
+        else {
+          const previous=files.find(f=>f.appProperties?.folioType==='paper' && f.appProperties.folioPaperId===data.paper_id && f.appProperties.folioContent===data.cloud_content_hash);
+          if(previous)baseline=await articleContentHash(C.normalize(await download(previous)));
+        }
+      }
+      // Naming never gives permission to overwrite a newer translation. Compare the
+      // article independently, including for devices upgrading from pre-naming hashes.
+      const localChanged=baseline?localArticle!==baseline:!!data.content_dirty || localArticle!==remoteArticle;
+      const remoteChanged=baseline?remoteArticle!==baseline:localArticle!==remoteArticle;
+      if(localArticle!==remoteArticle && localChanged && remoteChanged)throw new Error('两端正文均有更新或缺少同步基线，请先保留备份并下载最新版。名称、原稿和批注仍保留。');
+      if(!localChanged)bundle=current;
+      const naming=C.preferNaming(local.item?.naming,current.item?.naming);
+      if(naming)bundle={...bundle,item:{...bundle.item,naming}};
+      uploadContent=await contentHash(bundle)!==await contentHash(current);
     }
+    const hash=await contentHash(bundle);
     if(uploadContent) {
-      remoteFile=await upload((bundle.paper.meta.short_zh || bundle.paper.meta.title_zh || bundle.paper.meta.title_en || '论文').slice(0,60)+'.folio.json',bundle,{folioType:'paper',folioPaperId:data.paper_id,folioContent:hash},parent);
+      remoteFile=await upload(C.displayTitle(bundle).slice(0,60)+'.folio.json',bundle,{folioType:'paper',folioPaperId:data.paper_id,folioContent:hash},parent);
       files.push(remoteFile);
     }
     const initial=data.synced_once ? []:C.readerEvents(data.reader,deviceId);
@@ -339,16 +378,16 @@
     const fresh=await list(), remoteBundle=await getPaper(latest(fresh,data.paper_id),fresh);
     const reader=C.materialize([data.reader,remoteBundle.reader],await opsFor(fresh,data.paper_id));
     const index={...C.normalize({...remoteBundle,reader}),images:{}};
-    delete index.organization;delete index.item.tags;
+    delete index.organization;delete index.item.tags;delete index.item.naming;
     index.reader.progress={block:null,ratio:0,at:''};
     const indexHash=await hashValue(index),priorIndex=latestKind(fresh,data.paper_id,'index');
     if(!priorIndex || priorIndex.appProperties.folioContent!==indexHash) {
-      const file=await upload((index.paper.meta.title_zh || index.paper.meta.title_en || '论文').slice(0,60)+'.knowledge.json',index,{folioType:'index',folioPaperId:data.paper_id,folioContent:indexHash},parent);fresh.push(file);
+      const file=await upload(C.displayTitle(index).slice(0,60)+'.knowledge.json',index,{folioType:'index',folioPaperId:data.paper_id,folioContent:indexHash},parent);fresh.push(file);
     }
     const sent=new Set(outgoing.map(op=>op.event_id));
-    return S.mergeRemote(data.paper_id,reader,sent,{bound_account:account.permissionId,cloud_file_id:remoteFile.id,cloud_content_hash:await contentHash(remoteBundle),content_dirty:false,
+    return S.mergeRemote(data.paper_id,reader,sent,{bound_account:account.permissionId,cloud_file_id:remoteFile.id,cloud_content_hash:await contentHash(remoteBundle),cloud_article_content_hash:await articleContentHash(remoteBundle),content_dirty:false,naming_dirty:false,
       paper:remoteBundle.paper,images:remoteBundle.images,discussion:remoteBundle.discussion,item:remoteBundle.item,
-      expected_content:C.canonical({paper:data.paper,images:data.images,discussion:data.discussion,item:data.item})});
+      expected_content:expectedContent});
   }
   async function syncOrganization(files) {
     if(!O || !S.organization || !S.mergeOrganization)return;

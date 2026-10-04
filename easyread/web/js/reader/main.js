@@ -97,7 +97,7 @@
       if (changed.includes("paper") || changed.includes("reader")) {
         PR.rerenderKeepingPlace();
         const m = S.paper.meta || {};
-        PR.$(".bar-title").textContent = m.short_zh || m.title_zh || m.title_en || "";
+        PR.$(".bar-title").textContent = S.item?.naming?.title || m.short_zh || m.title_zh || m.title_en || "";
       } else if (changed.includes("job")) {
         const pend = PR.$(".pending-pages .pending");
         if (pend) PR.rerenderKeepingPlace();
@@ -138,8 +138,8 @@
     if (PR.store.mode === "static") PR.$("#backBtn").style.display = "none";
     PR.applyFeatures();
     const m = S.paper.meta || {};
-    document.title = (m.short_zh || m.title_zh || m.title_en || "论文") + " · Folio Read";
-    PR.$(".bar-title").textContent = m.short_zh || m.title_zh || m.title_en || "";
+    document.title = (S.item?.naming?.title || m.short_zh || m.title_zh || m.title_en || "论文") + " · Folio Read";
+    PR.$(".bar-title").textContent = S.item?.naming?.title || m.short_zh || m.title_zh || m.title_en || "";
     PR.ls.get("pr-seen-" + PR.paperKey, (S.discussion.entries || []).map((e) => e.id)).forEach((id) => seen.add(id));
     PR.ls.set("pr-seen-" + PR.paperKey, Array.from(seen));
     PR.renderPaper();

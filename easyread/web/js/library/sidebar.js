@@ -109,9 +109,9 @@
       '<span class="t">' + PR.esc(c) + '</span><span class="n">' + count((i) => (i.tags || []).includes(c)) + "</span>" + more + "</div>";
   }
   /* 侧栏放短标题：优先用翻译时起的短标题，其次取中文标题冒号前那半句 */
-  const shortTitle = (i) => i.short_zh || (i.title_zh || "").split(/[：:]/)[0] || i.title_en || "（未命名）";
+  const shortTitle = (i) => i.display_title || i.short_zh || (i.title_zh || "").split(/[：:]/)[0] || i.title_en || "（未命名）";
   function paperRow(i, pinnedRow) {
-    const title = i.title_zh || i.title_en || "（未命名）";
+    const title = i.display_title || i.title_zh || i.title_en || "（未命名）";
     return '<a class="srow paper" href="/read/' + i.id + '" data-paper="' + i.id + '"' + (pinnedRow ? " data-pinrow" : "") + ' title="' + PR.esc(title) + (i.last_opened ? "（" + PR.esc(PR.relTime(i.last_opened)) + "打开）" : "") + '">' +
       (pinnedRow ? PR.icon("pin", "sm") : "") + '<span class="t">' + PR.esc(shortTitle(i)) + "</span>" + (i.progress > 0.02 ? "<em>" + Math.round(i.progress * 100) + "%</em>" : "") + more + "</a>";
   }

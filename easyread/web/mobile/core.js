@@ -19,12 +19,84 @@
     note:'id anchor key quote prefix suffix segments lang root_index kind color style body created updated deleted _syncConflicts',
     segment:'anchor key quote prefix suffix lang root_index',
     edit:'zh base at reverted prev',
-    item:'tags status starred rating meta_override added updated last_opened archived status_manual',
+    item:'tags status starred rating meta_override added updated last_opened archived status_manual naming',
     link:'url label page rect',
     reference:'id text url doi',
     entry:'id anchor quote kind title q body at updated reply_to',
-    translation:'done_pages note'
+    translation:'done_pages note',
+    naming:'title source original_title original_filename updated version'
   };
+  const NAMING_SOURCES=new Set(['existing_chinese','bibliographic_metadata','pdf_metadata','first_page_title','filename','ai_translation','manual']);
+  const namingLabels={existing_chinese:'已有中文标题',bibliographic_metadata:'书目元数据',pdf_metadata:'PDF 元数据',first_page_title:'首页标题',filename:'原文件名',ai_translation:'AI 译名（非官方中文题名）',manual:'手动名称'};
+  const hasChinese=value=>/[\u3400-\u9fff\u{20000}-\u{3134f}]/u.test(value || '');
+  const namingWhitespace=/[\x09-\x0d\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g;
+  const namingPdfSuffix=new RegExp('(?:\\.pdf'+namingWhitespace.source.replace(/\+$/,'*')+')+$','i');
+  const hasUnpairedSurrogate=value=>[...value].some(c=>c.length===1&&/[\ud800-\udfff]/.test(c));
+  function namingTimestamp(value){
+    if(typeof value!=='string')return false;
+    const m=value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|[+-]\d{2}:\d{2})$/);
+    if(!m)return false;const year=Number(m[1]),month=Number(m[2]),day=Number(m[3]),days=[31,year%4===0&&(year%100!==0||year%400===0)?29:28,31,30,31,30,31,31,30,31,30,31];
+    return year>0&&month>=1&&month<=12&&day>=1&&day<=days[month-1]&&Number(m[4])<24&&Number(m[5])<60&&Number(m[6])<60&&(m[8]==='Z'||Number(m[8].slice(1,3))<24&&Number(m[8].slice(4,6))<60)&&Number.isFinite(Date.parse(value));
+  }
+  const namingText=value=>typeof value==='string'?value.normalize('NFC').trim():'';
+  function namingTitle(value) {
+    const title=namingText(value).replace(namingWhitespace,' ').replace(/[\p{Cc}\p{Cf}\p{Cs}]/gu,'').replace(/(?:\.pdf\s*)+$/i,'').trim();
+    if(!title || [...title].length>200)throw new Error('名称需为 1–200 个字符。');
+    return title;
+  }
+  function cleanNaming(value) {
+    if(!value || typeof value!=='object' || Array.isArray(value))return null;
+    try {
+      const title=namingTitle(value.title);
+      if(!NAMING_SOURCES.has(value.source) || typeof value.version!=='string' || !value.version || [...value.version].length>200 || /[\x00-\x1f\x7f]/.test(value.version))return null;
+      if(!namingTimestamp(value.updated))return null;
+      if(['version','original_title','original_filename'].some(k=>typeof value[k]==='string'&&hasUnpairedSurrogate(value[k])))return null;
+      if(['original_title','original_filename'].some(k=>typeof value[k]!=='string' || [...value[k]].length>1000))return null;
+      return {title,source:value.source,original_title:value.original_title,original_filename:value.original_filename,updated:value.updated,version:value.version};
+    } catch(_){return null;}
+  }
+  function preferNaming(a,b) {
+    const left=cleanNaming(a),right=cleanNaming(b);
+    if(!left)return right;if(!right)return left;
+    return time(left.updated)-time(right.updated)>0?left:time(left.updated)-time(right.updated)<0?right:left.version!==right.version?(left.version>right.version?left:right):canonical(left)>canonical(right)?left:right;
+  }
+  function displayTitle(data) {return cleanNaming(data.item?.naming)?.title || data.item?.meta_override?.title_zh || data.paper.meta.title_zh || data.paper.meta.title_en || '未命名论文';}
+  function namingCandidate(data) {
+    const existing=cleanNaming(data.item?.naming),meta=data.paper.meta,override=data.item?.meta_override || {};
+    if(existing)return {title:existing.title,source:existing.source};
+    for(const [value,source] of [[override.title_zh,'existing_chinese'],[meta.title_zh,'existing_chinese'],[meta.title_en,'pdf_metadata'],[meta.source?.replace?.(/\.pdf$/i,''),'filename']]) {
+      if(!hasChinese(value))continue;
+      try{return {title:namingTitle(value),source};}catch(_){}
+    }
+    return {title:'',source:'manual'};
+  }
+  function makeNaming(data,title,source='manual',version,updated=new Date().toISOString()) {
+    const previous=cleanNaming(data.item?.naming),meta=data.paper.meta;
+    const result=cleanNaming({title:namingTitle(title),source,original_title:previous?.original_title ?? [...String(meta.title_en || meta.title_zh || '')].slice(0,1000).join(''),
+      original_filename:previous?.original_filename ?? [...String(meta.source || meta.pdf || '')].slice(0,1000).join(''),updated,version});
+    if(!result)throw new Error('名称来源或版本无效，请重新预览。');return result;
+  }
+  function pdfFilename(value,suffix='') {
+    let stem=String(value||'').normalize('NFC').replace(/^[. ]+|[. ]+$/g,'').replace(namingPdfSuffix,'').replace(/[\p{Cc}\p{Cf}\p{Cs}<>:"/\\|?*]/gu,'_').replace(namingWhitespace,' ').replace(/^[. ]+|[. ]+$/g,'') || '论文';
+    if(/^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])$/i.test(stem.split('.')[0].trim()))stem='_'+stem;
+    const tail=(suffix?' ('+String(suffix).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,50)+')':'')+'.pdf';
+    const limit=180-new TextEncoder().encode(tail).length;let short='',bytes=0;
+    for(const char of stem){const size=new TextEncoder().encode(char).length;if(bytes+size>limit)break;short+=char;bytes+=size;}
+    return (short.replace(/[.\s]+$/g,'') || '论文')+tail;
+  }
+  function pdfFilenames(papers) {
+    const groups=new Map(),result={};
+    for(const p of papers){const name=pdfFilename(displayTitle(p)),key=name.toLowerCase();const group=groups.get(key)||[];group.push({p,name});groups.set(key,group);}
+    const used=new Set();
+    // Reserve unique names before allocating duplicates, so a suffix cannot clobber another title.
+    for(const group of groups.values())if(group.length===1){result[group[0].p.paper_id]=group[0].name;used.add(group[0].name.toLowerCase());}
+    for(const {p} of [...groups.values()].filter(group=>group.length>1).flat().sort((a,b)=>a.p.paper_id<b.p.paper_id?-1:a.p.paper_id>b.p.paper_id?1:0)){
+      const suffix=String(p.paper_id).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,12)||'paper';let name=pdfFilename(displayTitle(p),suffix),n=2;
+      while(used.has(name.toLowerCase()))name=pdfFilename(displayTitle(p),suffix+'-'+n++);
+      result[p.paper_id]=name;used.add(name.toLowerCase());
+    }
+    return result;
+  }
   function pick(value,kind) {
     const out={};
     for(const k of FIELDS[kind].split(' ')) if(value && Object.hasOwn(value,k)) out[k]=copy(value[k]);
@@ -70,7 +142,7 @@
       paper.translation=pick(input.paper.translation,'translation');
       paper.translation.done_pages=[...new Set((input.paper.translation.done_pages || []).filter(p=>Number.isInteger(p)&&p>0&&p<=10000))].sort((a,b)=>a-b);
     }
-    const item=pick(input.item,'item');if(item.meta_override) item.meta_override=pick(item.meta_override,'meta');
+    const item=pick(input.item,'item');const naming=cleanNaming(item.naming);if(naming)item.naming=naming;else delete item.naming;if(item.meta_override) item.meta_override=pick(item.meta_override,'meta');
     if(input.organization&&O){const org=O.normalize(input.organization);if(org.assignments[id])item.tags=O.assignment(org,id).tags;}
     return {schema:1,kind:'folio-mobile-paper',paper_id:id,paper,reader:cleanReader(input.reader || {}),
       discussion:{entries:(input.discussion?.entries || []).map(e=>pick(e,'entry'))},item,images,
@@ -177,7 +249,7 @@
     ops.forEach((op,i) => {if(op.op==='progress') last=i;});
     return ops.filter((op,i) => op.op !== 'progress' || i === last);
   }
-  const api = {MAX_BYTES,FIELDS,pick,cleanNote,cleanReader,copy,safeKey,esc,time,canonical,emptyReader,normalize,parseImport,applyOps,cloudOp,materialize,readerEvents,compact};
+  const api = {NAMING_SOURCES,namingLabels,hasChinese,namingTitle,cleanNaming,preferNaming,displayTitle,namingCandidate,makeNaming,pdfFilename,pdfFilenames,MAX_BYTES,FIELDS,pick,cleanNote,cleanReader,copy,safeKey,esc,time,canonical,emptyReader,normalize,parseImport,applyOps,cloudOp,materialize,readerEvents,compact};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else {root.FolioMobile=api;root.PR={esc};}
 })(typeof window === 'undefined' ? {} : window);

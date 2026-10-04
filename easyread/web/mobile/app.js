@@ -1,16 +1,16 @@
 (function () {
   'use strict';
   const P=window.FolioPlatform || {},C=window.FolioMobile,S=window.FolioStorage,D=window.FolioDrive,O=window.FolioOrganization,$=s=>document.querySelector(s),E=C.esc;
-  let view='library',papers=[],active=null,cloudFiles=[],selection=null,settings={},scrollTimer=0,toastTimer=0,aiOptions={},aiKey='',aiTask=null,driveFolderImportEnabled=false;
-  let organization=O.empty(),pendingImport=null,importing=false,classificationSession=null,sheetEpoch=0;
-  const title=data=>(data.item.meta_override || {}).title_zh || data.paper.meta.title_zh || data.paper.meta.title_en || '未命名论文';
+  let view='library',papers=[],active=null,cloudFiles=[],cloudIndexes=[],selection=null,settings={},scrollTimer=0,toastTimer=0,aiOptions={},aiKey='',aiTask=null,driveFolderImportEnabled=false;
+  let organization=O.empty(),pendingImport=null,importing=false,classificationSession=null,namingSession=null,namingLookup=null,exporting=false,sheetEpoch=0;
+  const title=data=>C.displayTitle(data);
   const effectiveMeta=data=>({...data.paper.meta,...data.item.meta_override});
   const notes=data=>Object.values(data.reader.notes || {}).filter(n=>!n.deleted || (n._syncConflicts || []).some(c=>!c.deleted));
   const percent=data=>Math.round(100*(Number((data.reader.progress || {}).ratio)||0));
   function toast(text) {$('#toast').textContent=text;$('#toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>{$('#toast').hidden=true;},4500);}
   async function syncCloud(onProgress) {
     try {cloudFiles=await D.syncAll(onProgress);return cloudFiles;}
-    finally {papers=await S.all();organization=await S.organization();if(view==='library')library();}
+    finally {papers=await S.all();cloudIndexes=await S.indexes();organization=await S.organization();if(view==='library')library();}
   }
   function syncMessage(fallback) {
     const report=D.lastImportReport;
@@ -24,14 +24,14 @@
     return '<details><summary>部分云盘 PDF 未导入（'+report.errors.length+'）</summary><ul>'+report.errors.map(error=>'<li>'+E(error.name)+'：'+E(error.message)+'</li>').join('')+'</ul><p>原文件未改动。修复后再次同步会重试。</p></details>';
   }
   function sheet(name,html) {sheetEpoch++;$('#sheetTitle').textContent=name;$('#sheetBody').innerHTML=html;$('#sheet').showModal();return sheetEpoch;}
-  function closeSheet() {sheetEpoch++;cancelClassification();$('#sheet').close();}
+  function closeSheet() {sheetEpoch++;cancelClassification();cancelNaming();$('#sheet').close();}
   function applyAppearance() {
     document.documentElement.dataset.theme=settings.theme==='auto' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark':'light') : settings.theme;
     document.documentElement.style.setProperty('--phone-font',(Number(settings.font)||18)+'px');
     $('meta[name="theme-color"]').content=document.documentElement.dataset.theme==='dark' ? '#2d2d2b':'#f9f9f7';
   }
   function setView(next,onlyActive=false) {
-    view=next;selection=null;$('#selectionTools').hidden=true;
+    sheetEpoch++;cancelNaming();view=next;selection=null;$('#selectionTools').hidden=true;
     if(next!=='reader'){PR.citationReferences=[];PR.refById={};}
     document.body.classList.toggle('reader-mode',view==='reader');
     $('#tabs').innerHTML=view==='reader' ? '<button data-act="toc">目录</button><button data-act="paperNotes">笔记</button><button data-act="find">查找</button>' :
@@ -42,9 +42,9 @@
   }
   function library() {
     const recent=papers.slice().sort((a,b)=>C.time(b.opened_at || b.imported_at)-C.time(a.opened_at || a.imported_at)),localIds=new Set(papers.map(p=>p.paper_id));
-    const remote=[...new Set(cloudFiles.filter(f=>f.appProperties.folioType==='paper').map(f=>f.appProperties.folioPaperId))].filter(id=>!localIds.has(id)).map(id=>{const file=D.latest(cloudFiles,id);return {paper_id:id,file,paper:{meta:{title_en:file.name.replace(/\.folio\.json$/,'')}},item:{}};});
+    const remote=[...new Set(cloudFiles.filter(f=>f.appProperties.folioType==='paper').map(f=>f.appProperties.folioPaperId))].filter(id=>!localIds.has(id)).map(id=>{const file=D.latest(cloudFiles,id),index=cloudIndexes.find(p=>p.paper_id===id&&(!D.account?.permissionId||p.bound_account===D.account.permissionId));return index?{...index,file}:{paper_id:id,file,paper:{meta:{title_en:file.name.replace(/\.folio\.json$/,'')}},item:{}};});
     let html='<div class="eyebrow">YOUR SHARED LIBRARY</div><h1>你的文献库</h1><p class="intro">'+(D.connected?'手机与电脑，共用同一个私有云端资料库。':(P.native?'PDF、阅读与笔记保存在此设备。云盘同步需完成 Android 授权配置。':'从手机直接导入 PDF。连接云盘后，与电脑共享资料。'))+'</p><div class="actions"><button class="primary" data-act="import">导入论文</button><button class="secondary" data-act="syncLibrary">'+(D.connected?'同步资料库':'连接云盘')+'</button></div>';
-    html+='<div class="actions"><button class="secondary" data-act="manageFolders">管理文件夹</button><button class="secondary" data-act="classifyPapers">批量 AI 分类</button></div>'+folderImportDetails();
+    html+='<div class="actions"><button class="secondary" data-act="manageFolders">管理文件夹</button><button class="secondary" data-act="classifyPapers">批量 AI 分类</button><button class="secondary" data-act="namePapers">批量中文命名</button></div>'+folderImportDetails();
     if(!recent.length&&!remote.length)html+='<section class="empty"><h2>从这里加入第一篇论文</h2><p>选择'+(P.native?'系统文件选择器':'iPhone「文件」')+'中的 PDF，也可导入已有的阅读 HTML 或 JSON。PDF 在此设备解析，联网并连接云盘后自动上传。</p><button class="secondary" data-act="demo">试读示例</button></section>';
     if(recent.length){const data=recent[0];html+='<button class="resume" data-open="'+E(data.paper_id)+'"><div class="eyebrow">继续阅读</div><h2>'+E(title(data))+'</h2><div class="progress"><i style="width:'+percent(data)+'%"></i></div><footer><span>'+percent(data)+'% · '+notes(data).length+' 条批注</span><span>继续 →</span></footer></button>';}
     if(recent.length||remote.length){
@@ -56,12 +56,12 @@
     for(const id of ['librarySearch','libraryFolder','libraryTag'])if($('#'+id))$('#'+id).oninput=()=>{if($('#paperList'))$('#paperList').innerHTML=cards(filterPapers(recent))||'<p class="muted">没有匹配的本机论文。</p>';if($('#cloudPaperList'))$('#cloudPaperList').innerHTML=cloudCards(filterPapers(remote))||'<p class="muted">没有匹配的云端论文。</p>';};
   }
   function cloudCards(list){return list.map(data=>'<article class="paper-card"><button class="paper-open" data-cloud="'+E(data.file.id)+'"><h3>'+E(title(data))+'</h3><div class="meta"><span>Google 云盘</span><span>下载到手机 ↓</span></div></button>'+organizationBadges(data.paper_id)+'<button class="secondary" data-organize-paper="'+E(data.paper_id)+'">文件夹与标签</button></article>').join('');}
-  function cards(list) {return list.map(data=>'<article class="paper-card"><button class="paper-open" data-open="'+E(data.paper_id)+'"><h3>'+E(title(data))+'</h3><div class="meta"><span>'+E(data.paper.meta.authors || '')+'</span><span>'+percent(data)+'% · '+notes(data).length+' 条批注</span></div></button>'+organizationBadges(data.paper_id)+'<p class="small muted">'+(data.demo?'界面示例':data.synced_once?'已在云端'+((data.pending || []).length?' · 批注待同步':''):D.connected?'等待同步到云端':'此设备保存 · 连接云盘后上传')+'</p>'+window.FolioJournal.badges(effectiveMeta(data))+'<button class="secondary" data-organize-paper="'+E(data.paper_id)+'">文件夹与标签</button></article>').join('');}
+  function cards(list) {return list.map(data=>'<article class="paper-card"><button class="paper-open" data-open="'+E(data.paper_id)+'"><h3>'+E(title(data))+'</h3><div class="meta"><span>'+E(data.paper.meta.authors || '')+'</span><span>'+percent(data)+'% · '+notes(data).length+' 条批注</span></div></button>'+organizationBadges(data.paper_id)+'<p class="small muted">'+(data.demo?'界面示例':data.synced_once?'已在云端'+((data.pending || []).length?' · 批注待同步':''):D.connected?'等待同步到云端':'此设备保存 · 连接云盘后上传')+'</p>'+window.FolioJournal.badges(effectiveMeta(data))+(C.cleanNaming(data.item?.naming)?'<p class="small muted">'+E(C.namingLabels[data.item.naming.source])+'</p>':'')+'<button class="secondary" data-name-paper="'+E(data.paper_id)+'">中文命名</button><button class="secondary" data-export-paper="'+E(data.paper_id)+'">导出 PDF</button><button class="secondary" data-organize-paper="'+E(data.paper_id)+'">文件夹与标签</button></article>').join('');}
   const tagInput=value=>O.tags(String(value||'').split(/[,，\n]/).map(t=>t.trim()).filter(Boolean),true,true);
   function folderOptions(selected=''){return '<option value="">未分类</option>'+O.live(organization).map(f=>'<option value="'+E(f.id)+'" '+(selected===f.id?'selected':'')+'>'+E(f.name)+'</option>').join('');}
   function organizationBadges(id){const a=O.assignment(organization,id),folder=organization.folders[a.folder_id];return '<div class="organization-badges"><span>'+E(folder?.name||'未分类')+'</span>'+a.tags.map(t=>'<span>#'+E(t)+'</span>').join('')+'</div>';}
   async function changeOrganization(fn){organization=await S.changeOrganization(fn);if(view==='library')library();return organization;}
-  function filterPapers(list){const q=($('#librarySearch')?.value||'').trim().toLowerCase(),folder=$('#libraryFolder')?.value??'*',tag=($('#libraryTag')?.value||'').trim().toLowerCase();return list.filter(p=>{const a=O.assignment(organization,p.paper_id);return (folder==='*'||(a.folder_id||'')===folder)&&(!tag||a.tags.some(t=>t.toLowerCase().includes(tag)))&&(!q||[title(p),p.paper.meta.authors||'',...a.tags].join(' ').toLowerCase().includes(q));});}
+  function filterPapers(list){const q=($('#librarySearch')?.value||'').trim().toLowerCase(),folder=$('#libraryFolder')?.value??'*',tag=($('#libraryTag')?.value||'').trim().toLowerCase();return list.filter(p=>{const a=O.assignment(organization,p.paper_id);return (folder==='*'||(a.folder_id||'')===folder)&&(!tag||a.tags.some(t=>t.toLowerCase().includes(tag)))&&(!q||[title(p),p.paper.meta.title_en||'',p.paper.meta.title_zh||'',p.paper.meta.source||'',p.paper.meta.authors||'',...a.tags].join(' ').toLowerCase().includes(q));});}
   function importChooser(){if(aiTask||importing)return toast('请先完成当前任务。');pendingImport=null;sheet('导入论文','<p class="small muted">选择逻辑文件夹和多个标签。原始 PDF 不会移动，重复导入按内容去重。</p><label for="importFolder">目标文件夹</label><select id="importFolder">'+folderOptions()+'</select><label for="importTags">标签（逗号分隔，可选）</label><input id="importTags" maxlength="251000"><div class="actions"><button class="primary" id="chooseImport">选择 PDF 或阅读文件</button></div>');$('#chooseImport').onclick=()=>{try{pendingImport={folder_id:$('#importFolder').value||null,tags:tagInput($('#importTags').value)};closeSheet();$('#importFile').click();}catch(e){toast(e.message);}};}
   function manageFolders(){const opened=sheet('管理文献文件夹','<p class="small muted">文件夹仅管理文献分类，不移动或删除原始 PDF。删除后，论文会显示为未分类，标签保留。</p><label for="folderName">新文件夹名称</label><input id="folderName" maxlength="80"><button class="primary" id="addFolder">创建</button><div>'+O.live(organization).map(f=>'<section class="folder-row"><span>'+E(f.name)+'</span><button data-rename-folder="'+E(f.id)+'">重命名</button><button data-delete-folder="'+E(f.id)+'">删除</button></section>').join('')+'</div>');$('#addFolder').onclick=async()=>{const button=$('#addFolder');if(button.disabled)return;button.disabled=true;try{const value=$('#folderName').value;await changeOrganization(o=>O.createFolder(o,value));if(sheetEpoch===opened)manageFolders();toast('文件夹已保存');}catch(e){toast(e.message);button.disabled=false;}};}
   function renameFolder(id){const f=organization.folders[id];const opened=sheet('重命名文件夹','<label for="renameFolderName">文件夹名称</label><input id="renameFolderName" maxlength="80" value="'+E(f.name)+'"><div class="actions"><button class="primary" id="saveFolderName">保存名称</button></div>');$('#saveFolderName').onclick=async()=>{const button=$('#saveFolderName');if(button.disabled)return;button.disabled=true;try{const value=$('#renameFolderName').value;await changeOrganization(o=>O.renameFolder(o,id,value));if(sheetEpoch===opened)manageFolders();toast('名称已保存');}catch(e){toast(e.message);button.disabled=false;}};}
@@ -71,6 +71,69 @@
   async function chooseClassification(){if(aiTask)return toast('请先完成当前模型任务。');organization=await S.organization();const candidates=(await corpus()).filter(p=>!p.demo);if(!candidates.length)return toast('请先导入论文。');sheet('批量 AI 分类建议','<p class="small muted">每批最多 20 篇。下一步先展示服务商和将发送的具体文本，不会立即发送。</p>'+candidates.map((p,i)=>'<label class="check-row"><input type="checkbox" name="classifyPaper" value="'+E(p.paper_id)+'" '+(i<20?'checked':'')+'>'+E(title(p))+'</label>').join('')+'<div class="actions"><button class="primary" id="previewClassification">查看发送内容</button></div>');$('#previewClassification').onclick=()=>{try{const ids=new Set([...document.querySelectorAll('[name="classifyPaper"]:checked')].map(e=>e.value));previewClassification(candidates.filter(p=>ids.has(p.paper_id)));}catch(e){toast(e.message);}};}
   function previewClassification(selected){const preview=window.FolioAI.classificationPreview(selected,organization);cancelClassification();const session={preview,selected,stage:'preview'};classificationSession=session;sheet('发送前确认','<p>将以下论文标题、摘要、正文摘录最多 3,000 字符（标题最多 300、摘要最多 2,000 字符），以及已有文件夹名称发送给你配置的模型服务。不会发送 PDF、图片、笔记或整篇正文。</p><dl class="model-disclosure"><dt>服务商 / 主机</dt><dd>'+E(preview.provider)+'</dd><dt>请求地址</dt><dd>'+E(preview.endpoint)+'</dd><dt>模型</dt><dd>'+E(preview.model)+'</dd></dl><details><summary>查看完整发送内容（'+selected.length+' 篇）</summary><pre class="classification-preview">'+E(JSON.stringify(preview.messages,null,2))+'</pre></details><label class="check-row"><input type="checkbox" id="classificationConsent">我同意将上述内容发送至此模型服务，生成分类建议</label><p class="small muted">AI 仅提供建议。你可以检查、编辑并再次确认后保存。</p><div class="actions"><button class="secondary" id="cancelClassification">取消</button><button class="primary" id="requestClassification" disabled>发送并生成建议</button></div><p id="classificationState" role="status"></p>');$('#classificationConsent').onchange=e=>{$('#requestClassification').disabled=!e.target.checked;};$('#cancelClassification').onclick=()=>{cancelClassification();closeSheet();};$('#requestClassification').onclick=async()=>{if(classificationSession!==session||session.stage!=='preview'||!$('#classificationConsent').checked)return;session.stage='request';session.controller=new AbortController();aiTask=session.controller;$('#requestClassification').disabled=true;$('#classificationConsent').disabled=true;$('#classificationState').textContent='正在生成建议，尚未更改任何分类…';try{const result=await window.FolioAI.classify(preview,{consent:true,signal:session.controller.signal});if(classificationSession!==session||session.controller.signal.aborted)return;session.stage='review';reviewClassification(session,result);}catch(e){if(classificationSession===session){session.stage='failed';$('#classificationState').textContent=e.message+' 关闭后可重新开始，原分类未改变。';}}finally{if(aiTask===session.controller)aiTask=null;}};}
   function reviewClassification(session,suggestions){sheet('检查并编辑分类建议','<p class="small muted">以下建议尚未保存。可修改目标文件夹和标签，确认后一次性应用。</p>'+suggestions.map((s,i)=>'<section class="classification-row" data-review-paper="'+E(s.paper_id)+'"><h3>'+E(title(session.selected.find(p=>p.paper_id===s.paper_id)))+'</h3><label for="reviewFolder'+i+'">已有文件夹</label><select id="reviewFolder'+i+'">'+folderOptions(s.folder_id)+'</select><label for="reviewNewFolder'+i+'">或新建文件夹（填写后优先使用）</label><input id="reviewNewFolder'+i+'" maxlength="80" value="'+E(s.folder_name)+'"><label for="reviewTags'+i+'">标签（逗号分隔）</label><input id="reviewTags'+i+'" maxlength="251000" value="'+E(s.tags.join(', '))+'"></section>').join('')+'<div class="actions"><button class="secondary" id="discardClassification">放弃建议</button><button class="primary" id="applyClassification">确认应用 '+suggestions.length+' 篇</button></div>');$('#discardClassification').onclick=()=>{cancelClassification();closeSheet();};$('#applyClassification').onclick=async()=>{if(classificationSession!==session||session.stage!=='review')return;const button=$('#applyClassification');button.disabled=true;try{const changes=suggestions.map((s,i)=>({...s,folder_id:$('#reviewNewFolder'+i).value.trim()?null:($('#reviewFolder'+i).value||null),folder_name:$('#reviewNewFolder'+i).value.trim(),tags:tagInput($('#reviewTags'+i).value)}));session.stage='apply';await changeOrganization(o=>O.assign(o,changes));if(classificationSession!==session)return;cancelClassification();closeSheet();toast('分类建议已确认保存');}catch(e){if(classificationSession===session){session.stage='review';button.disabled=false;toast(e.message);}}};}
+  function cancelNaming(){const session=namingSession;namingSession=null;namingLookup=null;if(session?.controller)session.controller.abort();if(aiTask===session?.controller)aiTask=null;}
+  async function chooseNaming(id){
+    if(aiTask)return toast('请先完成当前模型任务。');cancelNaming();const epoch=++sheetEpoch;namingLookup=epoch;
+    const local=await S.all(),candidates=local.filter(p=>!p.demo && (!id || p.paper_id===id)),known=new Map();
+    for(const p of await S.indexes())if(!D.account?.permissionId||p.bound_account===D.account.permissionId)known.set(p.paper_id,p);
+    for(const p of local)if(!p.demo)known.set(p.paper_id,p);
+    const libraryPapers=[...known.values()];
+    if(sheetEpoch!==epoch || namingLookup!==epoch)return;namingLookup=null;
+    if(!candidates.length)return toast('请先将论文导入或下载到此设备。');
+    if(id)return startNaming(candidates,libraryPapers);
+    sheet('批量中文命名','<p class="small muted">每批最多 20 篇。先使用已有中文标题；英文论文可手动输入或单独确认 AI 译名。只修改应用内名称和导出文件名，原始 PDF、云盘原文件与正文都保持原样。</p>'+candidates.map((p,i)=>'<label class="check-row"><input type="checkbox" name="namingPaper" value="'+E(p.paper_id)+'" '+(i<20?'checked':'')+'>'+E(title(p))+'</label>').join('')+'<div class="actions"><button class="primary" id="reviewNamingSelection">编辑名称</button></div>');
+    $('#reviewNamingSelection').onclick=()=>{try{const ids=new Set([...document.querySelectorAll('[name="namingPaper"]:checked')].map(e=>e.value));startNaming(candidates.filter(p=>ids.has(p.paper_id)),libraryPapers);}catch(e){toast(e.message);}};
+  }
+  function startNaming(selected,libraryPapers=papers){
+    if(!selected.length||selected.length>20)throw new Error('每批请选择 1–20 篇论文。');
+    cancelNaming();const session={selected:C.copy(selected),library:C.copy(libraryPapers),stage:'review',rows:selected.map(p=>{const candidate=C.namingCandidate(p);return {paper_id:p.paper_id,...candidate,proposed_title:candidate.title,expected_version:C.cleanNaming(p.item?.naming)?.version||''};})};namingSession=session;reviewNaming(session);
+  }
+  function captureNaming(session){return session.rows.map((row,i)=>({...row,title:$('#namingTitle'+i).value}));}
+  function reviewNaming(session){
+    session.stage='review';
+    sheet('检查并编辑中文名称','<p class="small muted">这些名称尚未保存。导出的是原始 PDF，名称可修改，内容不会变动。AI 译名不代表官方中文题名。</p>'+session.rows.map((row,i)=>{const p=session.selected.find(p=>p.paper_id===row.paper_id);return '<section class="classification-row"><h3>'+E(title(p))+'</h3><p class="small muted">原始标题：'+E(C.cleanNaming(p.item?.naming)?.original_title||p.paper.meta.title_en||p.paper.meta.title_zh||'未提取')+'<br>原文件名：'+E(C.cleanNaming(p.item?.naming)?.original_filename||p.paper.meta.source||p.paper.meta.pdf||'未知')+'</p><label for="namingTitle'+i+'">中文显示名称</label><input id="namingTitle'+i+'" maxlength="400" value="'+E(row.title)+'" placeholder="输入中文名称"><p class="small muted">来源：'+E(C.namingLabels[row.source]||'手动名称')+'</p><p class="small naming-filename" id="namingFilename'+i+'"></p></section>';}).join('')+'<p class="small muted">生成 AI 译名时，仅处理名称仍为空白或非中文的条目，下一步先展示服务商和准确发送文本。</p><div class="actions"><button class="secondary" id="previewNamingAI">查看 AI 译名发送内容</button><button class="secondary" id="discardNaming">取消</button><button class="primary" id="applyNaming">确认保存 '+session.rows.length+' 篇</button></div><p id="namingState" role="status"></p>');
+    function filenames(){
+      const rows=captureNaming(session),names=C.pdfFilenames(session.library.map(p=>{const row=rows.find(r=>r.paper_id===p.paper_id);return row?{...p,item:{...p.item,naming:undefined,meta_override:{...p.item.meta_override,title_zh:row.title||title(p)}}}:p;}));
+      rows.forEach((row,i)=>{$('#namingFilename'+i).textContent='导出文件名：'+(names[row.paper_id]||C.pdfFilename(row.title||'论文'));});
+    }
+    session.rows.forEach((_,i)=>{$('#namingTitle'+i).oninput=()=>{try{filenames();}catch(e){$('#namingState').textContent=e.message;}};});filenames();
+    $('#discardNaming').onclick=closeSheet;
+    $('#previewNamingAI').onclick=()=>{if(namingSession!==session||session.stage!=='review')return;try{session.rows=captureNaming(session);const selected=session.selected.filter(p=>{const row=session.rows.find(r=>r.paper_id===p.paper_id);return !C.hasChinese(row.title);});if(!selected.length)return toast('已有中文名称，可直接检查并保存。');previewNamingAI(session,selected);}catch(e){toast(e.message);}};
+    $('#applyNaming').onclick=async()=>{
+      if(namingSession!==session||session.stage!=='review')return;
+      const button=$('#applyNaming');button.disabled=true;
+      try{
+        const changes=captureNaming(session).map(row=>{const edited=C.namingTitle(row.title),proposed=row.proposed_title?C.namingTitle(row.proposed_title):'';return {paper_id:row.paper_id,title:edited,source:edited===proposed?row.source:'manual',expected_version:row.expected_version};});
+        session.stage='apply';await S.applyNaming(changes);papers=await S.all();if(active)active=await S.get(active.paper_id)||active;
+        if(namingSession!==session)return;
+        closeSheet();if(view==='library')library();if(view==='reader')renderPaper();toast('中文名称已保存；原文件保持不变');
+      }catch(e){if(namingSession===session){session.stage='review';button.disabled=false;$('#namingState').textContent=e.message;}}
+    };
+  }
+  function previewNamingAI(session,selected){
+    const preview=window.FolioAI.namingPreview(selected);session.stage='preview';
+    sheet('AI 译名发送前确认','<p>将以下准确文本发送给你配置的模型服务：每篇仅原始标题（最多 300 字符），没有可用标题时仅首页摘录（最多 1,200 字符，可能包含首页摘要开头）。不发送 PDF、图片、笔记或整篇论文。结果标为 AI 译名，需检查后另行保存。</p><dl class="model-disclosure"><dt>服务商 / 主机</dt><dd>'+E(preview.provider)+'</dd><dt>请求地址</dt><dd>'+E(preview.endpoint)+'</dd><dt>模型</dt><dd>'+E(preview.model)+'</dd></dl><details open><summary>完整发送内容（'+selected.length+' 篇）</summary><pre class="classification-preview">'+E(JSON.stringify(preview.messages,null,2))+'</pre></details><label class="check-row"><input type="checkbox" id="namingConsent">我同意将上述文本发送至此模型服务，生成 AI 译名</label><div class="actions"><button class="secondary" id="backNaming">返回编辑</button><button class="secondary" id="cancelNaming">取消</button><button class="primary" id="requestNaming" disabled>发送并生成译名</button></div><p id="namingState" role="status"></p>');
+    $('#namingConsent').onchange=e=>{$('#requestNaming').disabled=!e.target.checked;};
+    $('#cancelNaming').onclick=closeSheet;
+    $('#backNaming').onclick=()=>{if(session.controller)session.controller.abort();if(aiTask===session.controller)aiTask=null;session.controller=null;reviewNaming(session);};
+    $('#requestNaming').onclick=async()=>{
+      if(namingSession!==session||session.stage!=='preview'||!$('#namingConsent').checked)return;
+      session.stage='request';const controller=new AbortController();session.controller=controller;aiTask=controller;$('#requestNaming').disabled=true;$('#namingConsent').disabled=true;$('#namingState').textContent='正在生成 AI 译名，尚未修改名称…';
+      try{const result=await window.FolioAI.namePapers(preview,{consent:true,signal:controller.signal});if(namingSession!==session||controller.signal.aborted||session.controller!==controller)return;session.rows=session.rows.map(row=>{const suggestion=result.find(r=>r.paper_id===row.paper_id);return suggestion?{...row,...suggestion,proposed_title:suggestion.title}:row;});reviewNaming(session);}
+      catch(e){if(namingSession===session&&session.controller===controller){session.stage='failed';$('#namingState').textContent=e.message+' 原名称未改变，可返回编辑后重试。';}}
+      finally{if(aiTask===controller)aiTask=null;}
+    };
+  }
+  async function exportOriginal(id){
+    if(exporting)return toast('请先完成或取消当前导出。');exporting=true;
+    try{
+      const data=await S.get(id);if(!data)throw new Error('请先下载这篇论文。');
+      const source=await D.sourceFor(id,cloudFiles),all=await corpus(),name=C.pdfFilenames(all)[id]||C.pdfFilename(title(data));
+      const blob=new Blob([source.blob],{type:'application/pdf'});
+      if(P.saveBlob){const saved=await P.saveBlob(blob,name);return toast(saved?'原始 PDF 已导出：'+name:'已取消导出');}
+      const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);toast('已开始导出：'+name);
+    }catch(error){toast(error.message);}finally{exporting=false;}
+  }
   async function openPaper(id,block) {
     active=await S.update(id,data=>{data.opened_at=new Date().toISOString();});
     setView('reader');
@@ -104,7 +167,7 @@
     const meta=effectiveMeta(active);
     PR.citationReferences=active.paper.references || [];PR.refById=Object.fromEntries(PR.citationReferences.map(r=>[String(r.id),r]));
     $('#app').innerHTML='<div class="reader-actions"><button data-act="library">← 文献库</button><button data-act="bilingual">'+(settings.bilingual?'仅中文':'原文对照')+'</button><button data-act="original">原页</button><button data-act="type">Aa</button></div>'+
-      '<h1 class="reader-title">'+E(title(active))+'</h1><p class="reader-meta">'+E(meta.authors || '')+' · '+E(meta.page_count || (meta.pages || []).length || '?')+' 页'+(active.demo?' · 简短界面示例，非完整译文':'')+'</p><div class="actions"><button class="secondary" data-act="translatePaper">翻译为中文</button><button class="secondary" data-act="askPaper">问这篇论文</button><button class="secondary" data-organize-paper="'+E(active.paper_id)+'">文件夹与标签</button></div>'+organizationBadges(active.paper_id)+
+      '<h1 class="reader-title">'+E(title(active))+'</h1><p class="reader-meta">'+E(meta.authors || '')+' · '+E(meta.page_count || (meta.pages || []).length || '?')+' 页'+(active.demo?' · 简短界面示例，非完整译文':'')+'</p><div class="actions"><button class="secondary" data-act="translatePaper">翻译为中文</button><button class="secondary" data-act="askPaper">问这篇论文</button><button class="secondary" data-name-paper="'+E(active.paper_id)+'">中文命名</button><button class="secondary" data-export-paper="'+E(active.paper_id)+'">导出 PDF</button><button class="secondary" data-organize-paper="'+E(active.paper_id)+'">文件夹与标签</button></div>'+organizationBadges(active.paper_id)+
       window.FolioJournal.badges(meta)+(window.FolioJournal.visible(meta)?'<details class="journal-panel"><summary>期刊分区与来源</summary>'+window.FolioJournal.details(meta)+'</details>':'')+
       (meta.text_status==='original'?'<p class="document-status">'+E(meta.extraction_note || 'PDF 原文，可阅读和检索；尚未翻译。')+'</p>':'')+
       '<article id="paper" class="reader-paper">'+active.paper.blocks.map(b=>'<section class="blk" id="b-'+E(b.id)+'" data-block="'+E(b.id)+'">'+(b.page?'<div class="pg">p.'+E(b.page)+'</div>':'')+content(b)+'</section>').join('')+'</article>';
@@ -374,6 +437,8 @@
         if(!await S.get(id)){let file=D.latest(cloudFiles,id);if(!file){cloudFiles=await D.list();file=D.latest(cloudFiles,id);}if(!file)throw new Error('来源论文暂未在云端找到，请重新同步。');await S.save(await D.getPaper(file,cloudFiles));}
         return openPaper(id,knowledgeSource.dataset.knowledgeBlock);
       }
+      const naming=e.target.closest('[data-name-paper]');if(naming)return chooseNaming(naming.dataset.namePaper);
+      const exporting=e.target.closest('[data-export-paper]');if(exporting)return exportOriginal(exporting.dataset.exportPaper);
       const organize=e.target.closest('[data-organize-paper]');if(organize)return organizePaper(organize.dataset.organizePaper);
       const rename=e.target.closest('[data-rename-folder]');if(rename)return renameFolder(rename.dataset.renameFolder);
       const remove=e.target.closest('[data-delete-folder]');if(remove)return deleteFolder(remove.dataset.deleteFolder);
@@ -388,6 +453,7 @@
       const act=e.target.closest('[data-act]');if(!act) return;
       if(act.dataset.act==='import')return importChooser();
       if(act.dataset.act==='manageFolders')return manageFolders();
+      if(act.dataset.act==='namePapers')return chooseNaming();
       if(act.dataset.act==='classifyPapers')return chooseClassification();
       if(act.dataset.act==='translatePaper') return translatePaper();
       if(act.dataset.act==='askPaper') return setView('knowledge',true);
@@ -402,16 +468,16 @@
       if(act.dataset.act==='original') {
         const pages=active.paper.meta.pages || [];sheet('原文页面','<div id="sourcePDF"><button class="secondary" id="loadSourcePDF">打开完整 PDF</button></div>'+ (pages.filter(p=>active.images[p.img]).map(p=>'<p class="muted small">第 '+E(p.n)+' 页</p><img class="original-page" src="'+E(active.images[p.img])+'" alt="原文第 '+E(p.n)+' 页" loading="lazy">').join('') || '<p class="muted">可从云盘取得完整 PDF，或使用有原稿的设备再同步一次。</p>'));
         if(P.native) $('#loadSourcePDF').textContent='导出完整 PDF';
-        $('#loadSourcePDF').onclick=async()=>{try{const source=await D.sourceFor(active.paper_id,cloudFiles);if(P.saveBlob){const saved=await P.saveBlob(new Blob([source.blob],{type:'application/pdf'}),source.name || 'source.pdf');toast(saved?'完整 PDF 已保存，可在系统文件应用中打开':'已取消导出');return;}const url=URL.createObjectURL(source.blob);$('#sourcePDF').innerHTML='<a class="secondary" target="_blank" rel="noopener" href="'+E(url)+'">查看完整 PDF ↗</a>';setTimeout(()=>URL.revokeObjectURL(url),300000);}catch(error){toast(error.message);}};
+        $('#loadSourcePDF').onclick=async()=>{if(P.saveBlob)return exportOriginal(active.paper_id);try{const source=await D.sourceFor(active.paper_id,cloudFiles);if(P.saveBlob){const saved=await P.saveBlob(new Blob([source.blob],{type:'application/pdf'}),C.pdfFilenames(await S.all())[active.paper_id] || C.pdfFilename(title(active)));toast(saved?'完整 PDF 已保存，可在系统文件应用中打开':'已取消导出');return;}const url=URL.createObjectURL(source.blob);$('#sourcePDF').innerHTML='<a class="secondary" target="_blank" rel="noopener" href="'+E(url)+'">查看完整 PDF ↗</a>';setTimeout(()=>URL.revokeObjectURL(url),300000);}catch(error){toast(error.message);}};
       }
-      if(act.dataset.act==='backup') {if(!active) return toast('先打开一篇论文，再导出阅读文件');const saved=await downloadJson(C.normalize({...active,organization:await S.organization()}),title(active).replace(/[\\/:*?"<>|]/g,'')+'.folio.json');toast(saved?'已导出论文与当前批注':'已取消导出');}
+      if(act.dataset.act==='backup') {if(!active) return toast('先打开一篇论文，再导出阅读文件');const saved=await downloadJson(C.normalize({...active,organization:await S.organization()}),C.pdfFilename(title(active)).replace(/\.pdf$/,'.folio.json'));toast(saved?'已导出论文与当前批注':'已取消导出');}
       if(act.dataset.act==='find') {sheet('查找正文','<input id="findInput" type="search" class="search" placeholder="输入关键词" aria-label="查找关键词"><div id="findResults"></div>');$('#findInput').oninput=()=>{const query=$('#findInput').value.trim().toLowerCase();$('#findResults').innerHTML=query?active.paper.blocks.filter(b=>JSON.stringify(b).toLowerCase().includes(query)).map(b=>'<button class="find-match" data-jump="'+E(b.id)+'" data-paper="'+E(active.paper_id)+'">'+E(PR.plain(b.zh || b.caption_zh || b.en || '').slice(0,120))+'<small>p.'+E(b.page || '?')+'</small></button>').join('') || '<p class="muted">没有找到相关文字。</p>':'';};$('#findInput').focus();}
     } catch(error) {toast(error.message);}
   });
   $('#home').onclick=e=>{e.preventDefault();if(aiTask)return toast('请先完成或停止模型任务。');S.all().then(data=>{papers=data;setView('library');}).catch(error=>toast(error.message));};
   $('#importButton').onclick=importChooser;
-  $('#sheet').addEventListener('cancel',()=>{sheetEpoch++;cancelClassification();});
-  $('#sheet').addEventListener('close',()=>{sheetEpoch++;cancelClassification();});
+  $('#sheet').addEventListener('cancel',()=>{sheetEpoch++;cancelClassification();cancelNaming();});
+  $('#sheet').addEventListener('close',()=>{sheetEpoch++;cancelClassification();cancelNaming();});
   $('#importFile').onchange=async e=>{const file=e.target.files[0];if(file) {try{await importFile(file);}catch(error){toast(error.message);}}e.target.value='';};
   $('#sheetClose').onclick=()=>{if(aiTask && $('#translationState'))aiTask.abort();closeSheet();};
   $('#selectionTools').onpointerdown=e=>e.preventDefault();
@@ -440,6 +506,7 @@
     }catch(error){toast(error.message);}
   },60000);
   P.onBack=()=>{
+    if(namingLookup!==null){sheetEpoch++;cancelNaming();return true;}
     if($('#sheet').open){if(aiTask && $('#translationState'))aiTask.abort();closeSheet();return true;}
     if(!$('#selectionTools').hidden){$('#selectionCancel').click();return true;}
     if(aiTask){toast('请先完成或停止当前模型任务。');return true;}
@@ -455,7 +522,7 @@
       const config=await fetch('./config.json').then(r=>r.ok?r.json():{}).catch(()=>({}));
       if(config.google_web_client_id) settings.googleClientId=config.google_web_client_id;
     }
-    applyAppearance();papers=await S.all();organization=await S.organization();setView('library');
+    applyAppearance();papers=await S.all();cloudIndexes=await S.indexes();organization=await S.organization();setView('library');
     if(!P.bundledAssets && 'serviceWorker' in navigator && isSecureContext) navigator.serviceWorker.register('./sw.js').then(reg=>{
       if(reg.waiting) toast('手机阅读资源有更新，关闭后重新打开即可使用');
       navigator.serviceWorker.addEventListener('controllerchange',offlineStatus);
