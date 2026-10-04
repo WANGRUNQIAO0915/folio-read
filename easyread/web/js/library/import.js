@@ -19,6 +19,8 @@
       '<div class="or">或者</div>' +
       '<label class="field"><span>链接、arXiv 编号、DOI 或论文标题</span><div class="inline"><input class="input" id="arxivRef" placeholder="2411.00640 · 10.18653/v1/N19-1423 · 论文网页链接 · 论文标题">' +
       '<button class="btn accent" id="arxivGo">导入</button></div></label>' +
+      '<p class="hint">请填写完整论文标题。自动导入需要可下载的 PDF；需登录或订阅时，可在浏览器下载后选择文件导入。</p>' +
+      '<p class="hint" id="importRefStatus" role="status" aria-live="polite"></p>' +
       '<div class="imp-opts"><label class="check"><input type="checkbox" id="autoTr"' + (p.auto && !off ? " checked" : "") + (off ? " disabled" : "") + ">导入后翻译</label>" +
       '<div class="seg" id="scopeSeg">' + SCOPES.map(([k, l]) => '<button data-scope="' + k + '" class="' + (p.scope === k ? "on" : "") + '">' + l + "</button>").join("") + "</div>" +
       '<span class="first-n"' + (p.scope === "first" ? "" : " hidden") + '><input class="input" id="firstN" type="number" min="1" value="' + p.first + '"> 页</span></div>' +
@@ -84,6 +86,8 @@
     if (!ref || importingRef) return;
     importingRef = true;
     const btn = PR.$("#arxivGo");
+    const status = PR.$("#importRefStatus");
+    if (status) status.textContent = "正在检索论文并下载 PDF…";
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 查找中'; }
     else PR.toast('<span class="spin"></span> 正在查找并下载 ' + PR.esc(ref), null, 60000);
     const o = opts();
@@ -94,9 +98,12 @@
       L.select(r.id);
       PR.toast(r.new ? "已导入" + (o.translate ? "，后台开始翻译" : "") : "这篇已经在库里了", { label: "打开", fn: () => L.openReader(r.id) }, 6000);
     } catch (e) {
+      if (status) status.textContent = "导入失败：" + e.message;
       PR.toast("导入失败：" + PR.esc(e.message), null, 8000);
+    } finally {
+      importingRef = false;
       if (btn) { btn.disabled = false; btn.textContent = "导入"; }
-    } finally { importingRef = false; }
+    }
   }
   PR.importRef = importRef;
 

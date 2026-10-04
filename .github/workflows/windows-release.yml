@@ -1,9 +1,8 @@
-name: Windows test release build
+name: Windows test release
 
 on:
   push:
-    branches: ['release/v1.1.0-test.2']
-    paths: ['.github/workflows/windows-release.yml', 'pyproject.toml', 'easyread/**', 'scripts/build_windows.py', 'desktop_launcher.py']
+    tags: ['v1.1.0-dev*']
   workflow_dispatch:
 
 permissions:
@@ -24,6 +23,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Verify tagged application version
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python -c "import os; from easyread import __version__; expected=os.environ['RELEASE_TAG'].removeprefix('v').replace('-dev', '.dev'); assert __version__ == expected, (__version__, expected)"
       - name: Install clean build dependencies
         run: |
           python -m venv .venv-release
@@ -33,7 +38,7 @@ jobs:
       - name: Frontend regression tests
         shell: bash
         run: |
-          for test in test_chat_export test_markup_links test_mobile test_mobile_drive test_mobile_folder_import test_android_drive test_citations test_outline test_mobile_knowledge test_mobile_organization test_mobile_organization_drive test_mobile_organization_ui test_mobile_naming; do
+          for test in test_chat_export test_markup_links test_reference_import test_local_settings test_mobile test_mobile_drive test_mobile_folder_import test_android_drive test_citations test_outline test_mobile_knowledge test_mobile_organization test_mobile_organization_drive test_mobile_organization_ui test_mobile_naming; do
             node "tests/$test.cjs" || exit 1
           done
       - name: Build portable Windows application
@@ -43,8 +48,8 @@ jobs:
         run: |
           .venv-release/Scripts/python.exe -c "import zipfile; z=zipfile.ZipFile('dist/FolioRead-Windows.zip'); assert z.testzip() is None; assert 'FolioRead-Windows/FolioRead.exe' in z.namelist(); assert 'FolioRead-Windows/LICENSE' in z.namelist(); assert any('第三方许可' in n for n in z.namelist()); print('ZIP verified')"
           @(
-            "Release: v1.1.0-test.2",
-            "Application version: 1.1.0.dev2",
+            "Ref: $env:GITHUB_REF_NAME",
+            "Application version: $(.venv-release/Scripts/python.exe -c 'from easyread import __version__; print(__version__)')",
             "Commit: $env:GITHUB_SHA",
             "Run: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID",
             "Platform: Windows x64 portable",
@@ -97,7 +102,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: folio-read-windows-v1.1.0-test.2
+          name: folio-read-windows
           path: |
             dist/FolioRead.exe
             dist/FolioRead-Windows.zip
@@ -105,3 +110,25 @@ jobs:
             dist/BUILD-INFO.txt
           if-no-files-found: error
           retention-days: 30
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: folio-read-windows
+          path: dist
+      - name: Publish verified Windows prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$RELEASE_TAG" --verify-tag --prerelease --latest=false \
+            --title "Folio Read $RELEASE_TAG" --notes-file "docs/releases/$RELEASE_TAG.md" \
+            dist/FolioRead.exe dist/FolioRead-Windows.zip dist/SHA256SUMS.txt dist/BUILD-INFO.txt

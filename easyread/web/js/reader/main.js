@@ -89,6 +89,15 @@
     if (body.classList.contains("drawer-open")) PR.renderDrawer();
   }, 80);
   PR.on("reader", (op) => { if (op && op.op === "progress") return; if (!busy()) refreshNotes(); });
+  PR.on("settings-saved", async () => {
+    if (PR.store.mode !== "server") return;
+    try {
+      const d = await PR.api("/api/p/" + PR.pid + "/part/discussion");
+      S.discussion = d.data || { entries: [] };
+      S.versions.discussion = d.version;
+      refreshNotes();
+    } catch (e) { PR.toast("核对提示显示状态更新失败，请刷新页面"); }
+  });
 
   const seen = new Set();
   PR.on("remote", (changed) => {

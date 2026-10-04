@@ -90,7 +90,7 @@ async function prepare(){await page.locator('#orgAI').click();await page.locator
   // Cancel before sending transmits nothing and applies nothing.
   await openOne();await prepare();await cancel();assert.equal(countCalls(),0);assert.deepEqual((await current())[0].tags,['遥感','城市']);
   // Explicit opt-in + rapid repeated clicks sends only once. Result is reviewed first.
-  await openOne();await prepare();await page.locator('#orgConsent').check();await page.locator('#orgSend').evaluate(el=>{el.click();el.click();});
+  await openOne();assert.equal(await page.locator('#orgAllowNewFolders').isChecked(),false);await page.locator('#orgAllowNewFolders').check();await prepare();await page.locator('#orgConsent').check();await page.locator('#orgSend').evaluate(el=>{el.click();el.click();});
   await page.locator('.org-message').waitFor();assert.equal(countCalls(),1);assert.deepEqual((await current())[0].tags,['遥感','城市']);
   await page.locator('[data-org-tags]').fill('人工复核, GIS');await page.screenshot({path:path.join(artifacts,'desktop-ai-review.png'),fullPage:true,animations:'disabled'});
   await page.locator('#orgSave').click();await page.locator('#organizationDlg.open').waitFor({state:'hidden'});await page.waitForFunction(()=>PR.lib.items[0].tags.includes('人工复核'));assert.equal((await current())[0].tags.length,2);

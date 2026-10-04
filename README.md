@@ -8,7 +8,7 @@
 
 An open-source paper reader with translation, annotations, and personal-library Q&A.
 
-[![Windows 测试版 v1.1.0-test.2](https://img.shields.io/badge/Windows-v1.1.0--test.2-cc7d5e?logo=windows&logoColor=white)](https://github.com/WANGRUNQIAO0915/folio-read/releases/tag/v1.1.0-test.2)
+[![Windows 测试版 v1.1.0-dev5](https://img.shields.io/badge/Windows-v1.1.0--dev5-cc7d5e?logo=windows&logoColor=white)](https://github.com/WANGRUNQIAO0915/folio-read/releases/tag/v1.1.0-dev5)
 [![稳定版 v1.0.0](https://img.shields.io/badge/Stable-v1.0.0-6c7467)](https://github.com/WANGRUNQIAO0915/folio-read/releases/tag/v1.0.0)
 [![MIT](https://img.shields.io/badge/License-MIT-777777)](LICENSE)
 
@@ -28,9 +28,9 @@ Folio Read 是面向论文阅读与个人文献管理的开源应用，集成 PD
 
 | 模块 | 功能 |
 | --- | --- |
-| 阅读与翻译 | PDF 与 arXiv 论文导入、后台翻译、中英对照、原 PDF 页面查看、层级目录、正文配图与手动框选。 |
+| 阅读与翻译 | PDF、arXiv、DOI、论文网址及完整标题导入；后台翻译、中英对照、原 PDF 页面查看、层级目录、正文配图与手动框选。[导入说明](docs/reference-import.md) |
 | 标注与笔记 | 文字复制、四色荧光笔、下划线、跨段标注、注记、文内查找、撤销与阅读进度保存。 |
-| 文献组织 | 逻辑文件夹、导入位置选择、批量移动与多标签管理；支持经人工确认的 AI 分类建议。[使用说明](docs/library-organization.md) |
+| 文献组织 | 逻辑文件夹、批量移动与多标签管理；AI 按需建议 0–4 个标签，默认复用已有文件夹，经人工确认后保存。[使用说明](docs/library-organization.md) |
 | 中文名称 | 单篇或批量设置中文显示名，并用于原 PDF 导出文件名；保留原题、原文件名与 PDF 内容。[使用说明](docs/chinese-pdf-names.md) |
 | 资料库问答 | 面向当前论文、全部收藏或指定分类提问，可纳入个人笔记；回答区分论文依据、个人笔记与 AI 的库外补充，并提供来源定位。 |
 | 研究与导出 | 比较 2–8 篇论文，保存研究主题、证据与待核实问题；导出 Markdown、Obsidian 笔记、RIS 和离线阅读文件。 |
@@ -45,16 +45,16 @@ Folio Read 是面向论文阅读与个人文献管理的开源应用，集成 PD
 
 | 版本 | 定位 | 下载 |
 | --- | --- | --- |
-| **v1.1.0-test.2** | Windows x64 预发布测试版（未签名），包含当前新增功能 | [便携 ZIP](https://github.com/WANGRUNQIAO0915/folio-read/releases/download/v1.1.0-test.2/FolioRead-Windows.zip) · [独立 EXE](https://github.com/WANGRUNQIAO0915/folio-read/releases/download/v1.1.0-test.2/FolioRead.exe) · [发布说明与校验](https://github.com/WANGRUNQIAO0915/folio-read/releases/tag/v1.1.0-test.2) |
+| **v1.1.0-dev5** | Windows x64 预发布测试版（未签名），包含下述修复及当前新增功能 | [便携 ZIP](https://github.com/WANGRUNQIAO0915/folio-read/releases/download/v1.1.0-dev5/FolioRead-Windows.zip) · [独立 EXE](https://github.com/WANGRUNQIAO0915/folio-read/releases/download/v1.1.0-dev5/FolioRead.exe) · [发布说明与校验](https://github.com/WANGRUNQIAO0915/folio-read/releases/tag/v1.1.0-dev5) |
 | **v1.0.0** | 保留的旧稳定版 | [便携 ZIP](https://github.com/WANGRUNQIAO0915/folio-read/releases/download/v1.0.0/FolioRead-Windows.zip) · [发布说明](https://github.com/WANGRUNQIAO0915/folio-read/releases/tag/v1.0.0) |
 
 1. 下载便携 ZIP，解压到具有写入权限的文件夹。
 2. 运行 `FolioRead.exe`，打开桌面应用。
-3. 导入 PDF 或 arXiv 论文。需要翻译或问答时，在设置中配置模型服务。
+3. 导入 PDF，或通过 arXiv、DOI、论文网址及完整标题查找可获取的全文。需要翻译或问答时，在设置中配置模型服务。
 
 桌面应用无需安装 Python，依赖 Microsoft WebView2 Runtime。缺少该组件时，可从[微软官方页面](https://developer.microsoft.com/microsoft-edge/webview2/)安装。
 
-升级前先通过「文件 → 打开数据文件夹」确认实际数据位置，再退出旧程序并备份整个数据目录。替换程序时保留原数据目录。测试包的应用内部版本为 `1.1.0.dev2`。
+升级前先通过「文件 → 打开数据文件夹」确认实际数据位置，再退出旧程序并备份整个数据目录。替换程序时保留原数据目录。测试包的应用内部版本为 `1.1.0.dev5`，本次主要修复参见[更新记录](CHANGELOG.md)。
 
 ### 手机网页 / PWA
 
@@ -80,9 +80,13 @@ Folio Read 是面向论文阅读与个人文献管理的开源应用，集成 PD
 
 中文名称可手工填写，也可基于本地标题信息生成建议。启用 AI 分类或名称翻译前，界面会显示接收服务与实际发送文本；明确同意后发送，检查或修改结果并确认应用后保存。AI 译名标注为「AI 翻译（非官方中文题名）」。文件夹、标签和已确认的中文名称随资料库同步。分类与改名不会移动原 PDF，也不会重命名云盘原文件。
 
+AI 分类每篇按需建议 0–4 个标签，不要求凑满四个；默认只选择已有文件夹。需要新研究主题时，可勾选「允许 AI 建议新文件夹」，每批最多建议一个。手动标签和旧记录不受这个数量限制。
+
 ### 阅读与提问
 
 阅读页支持中文正文、英文对照与原 PDF 页面切换。选中文字后，可通过工具栏或快捷键复制、标注和添加注记。
+
+右侧的「原文核对提示」默认关闭，可在「设置 → 翻译」中重新开启；已有核对记录保留。此选项控制 AI 对原文疑点的提示，翻译完整性、JSON 格式和公式检查仍会执行。
 
 | 快捷键 | 操作 |
 | --- | --- |
@@ -108,7 +112,7 @@ Folio Read 是面向论文阅读与个人文献管理的开源应用，集成 PD
 
 | 平台 | 交付状态 | 验证与兼容性 |
 | --- | --- | --- |
-| Windows x64 | 提供 v1.1.0-test.2 便携测试包 | 已完成打包 EXE / WebView2 自动检查；未做 Authenticode 代码签名。 |
+| Windows x64 | 提供 v1.1.0-dev5 便携测试包 | 每次发布由干净环境构建，并检查打包 EXE / WebView2；具体结果见发布附件，未做 Authenticode 代码签名。 |
 | 手机网页 / PWA | 已部署测试站，支持独立使用 | iPhone Safari 真机双向同步仍需验证；iOS 锁屏后不保证后台同步。 |
 | Android | 共享源码已整合当前功能，尚无对应的新 APK 发布 | 构建与 lint 已验证；模拟器运行、真机授权及升级安装验证未完成。构建与签名说明见 [Android 文档](android/README.md)。 |
 | macOS / Linux | 可从源码使用网页模式 | 桌面窗口体验尚未验证。 |

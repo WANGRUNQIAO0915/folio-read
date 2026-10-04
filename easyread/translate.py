@@ -115,7 +115,8 @@ def _one_batch(ws: Workspace, cfg: dict, batch: list[int], total_pages: int, can
     mode = engines.image_mode(cfg)
     images = [pdfwork.engine_image(ws.root, n) for n in batch] if mode != "text" else []
     nxt = batch[-1] + 1
-    prompt = prompts.translate(ws, batch, mode, _next_head(ws, nxt) if nxt <= total_pages else "")
+    prompt = prompts.translate(ws, batch, mode, _next_head(ws, nxt) if nxt <= total_pages else "",
+                               source_checks=bool(cfg.get("source_checks", False)))
     text = engines.run(cfg, prompt, ws.root, images, cancel)
     try:
         data = engines.parse_json(text)
@@ -142,7 +143,8 @@ def _one_batch(ws: Workspace, cfg: dict, batch: list[int], total_pages: int, can
     with _merge_lock:
         data = _normalize(data, batch, _taken(ws, batch))  # 并发时别的批可能刚占用了同名 id
         merge_blocks(ws, data, done=batch, replace_pages=batch)
-        _save_checks(ws, data.get("checks"), batch)
+        if cfg.get("source_checks", False):
+            _save_checks(ws, data.get("checks"), batch)
         try:
             pdfwork.locate(ws.root)
         except Exception:  # noqa: BLE001 —— 定位失败不影响阅读

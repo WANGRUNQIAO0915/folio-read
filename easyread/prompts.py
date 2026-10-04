@@ -9,7 +9,6 @@ from . import personal
 RULES = """翻译要求：
 - 忠实：保留原文的论证顺序、章节编号、公式、表格、引用号 [n]、限定词（may/suggest/likely/at least）、否定和比较对象。可以调整中文语序、拆长句，读起来要像中文母语者写的学术文字。
 - 只翻译，不解释、不总结、不加原文没有的内容。原文的笔误照录，不要改。
-- 但要留心原文自己的问题：数字前后对不上（表和正文、两张表之间）、公式和文字说的不一致、符号用错、明显的笔误。发现了就写进 checks，正文照录不改；没有就不写，不要为了写而写，也不要写翻译说明。
 - 术语全文统一；首次出现的核心术语写“中文（English）”。已有术语表必须遵守。统计学里 standard error 译“标准误差”。
 - 行内数学一律写成 $TeX$（KaTeX 能渲染的 LaTeX），变量、下标、上标都要用 TeX，不要用 Unicode 拼。行间公式单独成 math 块，照原页重排，原编号放 tag。
 - 表格重排成 table 块，表头译成中文，数字原样。图用 figure 块，写完整题注（src 留空，程序会自动配图）。
@@ -24,7 +23,6 @@ SCHEMA = """输出格式：只输出一个 JSON 对象，不要任何别的文�
   "meta": {"title_zh": "", "short_zh": "不超过 12 字的短标题", "title_en": "", "authors": "作者, 用逗号分隔", "affiliation": "", "date": "", "venue": ""},   // 只有包含第 1 页时才写
   "glossary": [{"en": "standard error", "zh": "标准误差"}],   // 本批新出现的核心术语
   "references": [{"id": "1", "text": "原文条目"}],             // 本批出现参考文献列表时才写
-  "checks": [{"anchor": "块 id", "quote": "译文里相关的几个字（可空）", "title": "一句话：哪里不对", "body": "具体说明和依据，比如算一遍给出对得上的数"}],   // 原文有问题时才写
   "blocks": [ ... ]
 }
 块（每块都要 id、type、page；page 是这块在原 PDF 中开始的页码）：
@@ -60,7 +58,7 @@ def _context(ws: Workspace, pages: list[int]) -> str:
     return "\n".join(lines)
 
 
-def translate(ws: Workspace, pages: list[int], engine: str, next_head: str) -> str:
+def translate(ws: Workspace, pages: list[int], engine: str, next_head: str, *, source_checks: bool = False) -> str:
     from .links import ensure
     source_links = [link for link in ensure(ws.root) if link['page'] in pages]
     texts = []
@@ -80,8 +78,15 @@ def translate(ws: Workspace, pages: list[int], engine: str, next_head: str) -> s
         see += ("\n每个 figure 块可额外给出 image_box: [x0,y0,x1,y1] 和 image_page。"
                 "坐标以原页左上角为 (0,0)、右下角为 (1,1)，框住整幅图及所有子图、图例和坐标标签，"
                 "不含图注或周围正文。image_page 是图片实际所在的 PDF 页码。没有把握就省略这两个字段，不要猜坐标。")
+    rules, schema = RULES, SCHEMA
+    if source_checks:
+        rules += "\n- 留心原文自己的数字、公式、符号或笔误问题，发现了写进 checks，正文照录不改；没有就不写。"
+        schema = schema.replace('  "blocks": [ ... ]',
+            '  "checks": [{"anchor":"块 id", "quote":"相关原话", "title":"问题", "body":"依据"}],\n  "blocks": [ ... ]')
+    else:
+        rules += "\n- 本次仅翻译，不审查原文内容，不生成原文核对提示。"
     return (f"你在把一篇学术论文译成中文，这次只处理第 {', '.join(map(str, pages))} 页。{see}\n\n"
-            f"{_context(ws, pages)}\n\n{RULES}\n每个请求页都必须有带 page 的块，参考文献页输出 references 块；不要漏页。\n\n{SCHEMA}\n\n" +
+            f"{_context(ws, pages)}\n\n{rules}\n每个请求页都必须有带 page 的块，参考文献页输出 references 块；不要漏页。\n\n{schema}\n\n" +
             ("原页网页链接（来源数据）：\n" + json.dumps(source_links, ensure_ascii=False) + "\n\n" if source_links else '') +
             "\n\n".join(texts) + look)
 

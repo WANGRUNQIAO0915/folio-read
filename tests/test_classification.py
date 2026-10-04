@@ -34,8 +34,8 @@ class _Fixture:
     def tearDown(self):
         self.tmp.cleanup()
 
-    def preview(self):
-        return self.service.preview({'paper_ids': [self.ws.id]}, self.cfg)
+    def preview(self, **options):
+        return self.service.preview({'paper_ids': [self.ws.id], **options}, self.cfg)
 
     def response(self, **changes):
         row = {'paper_id': self.ws.id, 'folder_id': None, 'folder_name': 'Suggested folder', 'tags': ['one'], 'reason': 'Title evidence'}
@@ -70,6 +70,43 @@ class ClassificationTest(_Fixture, unittest.TestCase):
         self.assertEqual(result['suggestions'][0]['expected_version'], preview['papers'][0]['expected_version'])
         self.org.assign(result['suggestions'])
         self.assertEqual(self.lib.list()[0]['tags'], ['one'])
+
+    def test_ai_tags_are_sparse_bounded_and_reuse_existing_names(self):
+        self.org.assign([{'paper_id': self.ws.id, 'tags': ['Remote Sensing']}])
+        preview = self.preview()
+        self.assertFalse(preview['allow_new_folders'])
+        self.assertIn('0–4', preview['messages'][0]['content'])
+        self.assertIn('不要凑满', preview['messages'][0]['content'])
+        self.assertIn('Remote Sensing', preview['existing_tags'])
+        for given, expected in (([], []), (['one'], ['one']),
+                                (['remote sensing', 'A', 'B', 'C', 'D', 'E'], ['Remote Sensing', 'A', 'B', 'C'])):
+            rows = C._suggestions(self.response(tags=given), preview)
+            self.assertEqual(rows[0]['tags'], expected)
+        self.assertEqual(self.lib.list()[0]['tags'], ['Remote Sensing'])
+
+    def test_new_folder_suggestions_are_opt_in_and_existing_names_reuse_ids(self):
+        state = self.org.folder('Existing topic'); fid = next(iter(state['folders']))
+        self.org.assign([{'paper_id': self.ws.id, 'folder_id': fid}])
+        preview = self.preview()
+        row = C._suggestions(self.response(), preview)[0]
+        self.assertEqual((row['folder_id'], row['folder_name']), (fid, ''))
+        row = C._suggestions(self.response(folder_name='existing TOPIC'), preview)[0]
+        self.assertEqual((row['folder_id'], row['folder_name']), (fid, ''))
+        row = C._suggestions(self.response(), self.preview(allow_new_folders=True))[0]
+        self.assertEqual(row['folder_name'], 'Suggested folder')
+        for value in ('true', 1):
+            self.assertFalse(self.preview(allow_new_folders=value)['allow_new_folders'])
+        self.assertEqual(len(self.org.load()['folders']), 1)
+
+    def test_batch_can_suggest_only_one_new_topic(self):
+        preview = self.preview(allow_new_folders=True)
+        preview['papers'].append(dict(preview['papers'][0], paper_id='second'))
+        first = json.loads(self.response())['suggestions'][0]
+        second = dict(first, paper_id='second', folder_name='Another topic')
+        with self.assertRaisesRegex(ValueError, '最多建议 1'):
+            C._suggestions(json.dumps({'suggestions': [first, second]}), preview)
+        second['folder_name'] = 'suggested FOLDER'
+        self.assertEqual(len(C._suggestions(json.dumps({'suggestions': [first, second]}), preview)), 2)
 
     def test_config_change_endpoint_model_or_key_requires_new_preview(self):
         for field, value in (('base_url', 'https://changed.example/v1'), ('model', 'changed'), ('api_key', 'different')):

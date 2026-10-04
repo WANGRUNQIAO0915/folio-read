@@ -12,10 +12,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import __version__, chat, chat_models, chat_store, cli_models, config, detect, engines, figures, paperdata, pdfwork, personal, prefs, search
+from . import __version__, chat, chat_models, chat_store, cli_models, config, detect, engines, figures, paperdata, pdfwork, personal, prefs, search, sources
 from .log import log, setup as setup_log, tail
 from .jobs import Jobs
-from . import research, study
+from . import research, study, source_checks
 from .library import Library
 from .store import now_iso, write_json_atomic
 
@@ -262,6 +262,7 @@ class Handler(BaseHTTPRequestHandler):
                 _warm_figures(ws)
                 return self._json(200, {
                     **{n: ws.load(n) for n in ("paper", "discussion", "reader", "layout", "item", "job")},
+                    "discussion": source_checks.for_reader(ws.load("discussion")),
                     "paper": for_reader(ws),
                     "versions": ws.versions(), "token": app.token, "id": ws.id,
                     "engine": config.load().get("engine")})
@@ -278,6 +279,8 @@ class Handler(BaseHTTPRequestHandler):
             if action == "part" and len(parts) > 5 and parts[5] in ("paper", "discussion", "reader", "layout", "job"):
                 from .links import for_reader
                 data = for_reader(ws) if parts[5] == 'paper' else ws.load(parts[5])
+                if parts[5] == 'discussion':
+                    data = source_checks.for_reader(data)
                 return self._json(200, {"data": data, "version": ws.versions()[parts[5]]})
         if path.startswith("/p/"):
             _, _, pid, rel = path.split("/", 3)
@@ -302,6 +305,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(403, {"error": "bad token"})
         try:
             self._post()
+        except sources.SourceError as e:
+            self._json(400, {"error": str(e), "code": e.code})
         except (ValueError, KeyError) as e:
             self._json(400, {"error": str(e)})
         except Exception as e:  # noqa: BLE001

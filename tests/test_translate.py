@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from easyread import engines, translate
+from easyread import engines, translate, prompts, source_checks
 from easyread.store import Workspace, write_json_atomic
 
 
@@ -56,6 +56,23 @@ class TranslateTest(unittest.TestCase):
         self.assertEqual(paper["translation"]["done_pages"], [1, 2, 4, 5, 6])
         self.assertEqual([b["page"] for b in paper["blocks"]], [1, 2, 4, 5, 6])  # 并发也按页码排好
         self.assertIn("第 3 页 第 2 次失败", (self.ws.root / "job.log").read_text(encoding="utf-8"))
+
+    def test_source_review_is_opt_in_and_existing_notes_are_preserved(self):
+        prompt = prompts.translate(self.ws, [1], 'text', '')
+        self.assertNotIn('"checks":', prompt)
+        self.assertIn('"checks":', prompts.translate(self.ws, [1], 'text', '', source_checks=True))
+        entries = [{'id': 'old-check', 'kind': 'check', 'by': 'translator', 'anchor': 'p1-1', 'body': '旧核对提示'},
+                   {'id': 'answer', 'kind': 'reply', 'body': '保留问答'}]
+        self.ws.update('discussion', lambda d: d.__setitem__('entries', entries))
+        payload = {'blocks': [{'id': 'p1-1', 'type': 'para', 'page': 1, 'en': 'text', 'zh': '译文'}],
+                   'checks': [{'anchor': 'p1-1', 'body': '不应保存的新核对提示'}]}
+        with mock.patch.object(engines, 'run', return_value=json.dumps(payload)):
+            translate._one_batch(self.ws, self.cfg, [1], 6, threading.Event(), lambda *a: None)
+        self.assertEqual(self.ws.load('discussion')['entries'], entries)
+        with mock.patch.object(source_checks.config, 'load', return_value={'source_checks': False}):
+            self.assertEqual(source_checks.for_reader(self.ws.load('discussion'))['entries'], [entries[1]])
+        with mock.patch.object(source_checks.config, 'load', return_value={'source_checks': True}):
+            self.assertEqual(source_checks.for_reader(self.ws.load('discussion'))['entries'], entries)
 
     def test_quota_error_stops_remaining_batches(self):
         calls = []

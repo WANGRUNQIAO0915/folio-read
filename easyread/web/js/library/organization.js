@@ -66,13 +66,13 @@
     if(!selected.length)return PR.toast('请先选择论文');
     if(selected.length>100)return PR.toast('每次最多整理 100 篇论文');
     focusBefore=document.activeElement;
-    state={ids:selected.map(i=>i.id),drafts:selected.map(i=>({paper_id:i.id,title:title(i),folder_id:i.folder_id||null,tags:[...(i.tags||[])],expected_version:L.organization.assignments[i.organization_id || i.id]?.version || null}))};
+    state={allowNewFolders:false,ids:selected.map(i=>i.id),drafts:selected.map(i=>({paper_id:i.id,title:title(i),folder_id:i.folder_id||null,tags:[...(i.tags||[])],expected_version:L.organization.assignments[i.organization_id || i.id]?.version || null}))};
     session++;dlg.classList.add('open');renderEdit();
     PR.$('[data-org-close]',dlg).focus();
   };
   function renderEdit(message) {
     if(!state)return;
-    shell('<p class="hint">每篇论文放入一个文件夹，可以有多个标签。这里只修改分类元数据，不移动或复制原始 PDF。已连接的共享资料库会在下次同步时更新。</p>'+
+    shell('<p class="hint">文件夹用于大的研究主题，标签用于具体内容。AI 每篇最多建议 4 个标签，按需给出、不凑数量，优先复用已有分类名称；手动标签可以自行增减。这里只整理分类，不移动原始 PDF。</p>'+
       (message?'<p class="org-message" role="status">'+E(message)+'</p>':'')+
       '<div class="org-batch"><label>统一文件夹 <select class="input" id="orgBatchFolder"><option value="__keep__">保持各自位置</option>'+L.folderOptions()+'</select></label><button class="btn sm line" id="orgBatchSet">应用到下方</button></div>'+
       '<div class="org-paper-list">'+state.drafts.map((d,n)=>'<section class="org-paper" data-org-index="'+n+'"><h3>'+E(d.title)+'</h3>'+
@@ -80,6 +80,7 @@
         '<label data-org-new'+(d.folder_name?'':' hidden')+'>新文件夹名<input class="input" data-org-name maxlength="80" value="'+E(d.folder_name||'')+'"></label>'+
         '<label>标签（用逗号分隔）<input class="input" data-org-tags value="'+E(d.tags.join(', '))+'" maxlength="251000"></label>'+
         (d.reason?'<p class="hint">AI 建议理由：'+E(d.reason)+'</p>':'')+'</section>').join('')+'</div>'+
+      '<label class="check"><input type="checkbox" id="orgAllowNewFolders"'+(state.allowNewFolders?' checked':'')+'>允许 AI 建议新文件夹（本批最多 1 个）</label>'+
       '<p class="org-error" id="orgError" role="alert"></p><div class="actions"><button class="btn line" id="orgAI"'+(state.ids.length>20?' disabled':'')+'>AI 建议分类'+(state.ids.length>20?'（每批最多 20 篇）':'')+'</button><span class="grow"></span><button class="btn" data-org-close>取消</button><button class="btn accent" id="orgSave">确认应用分类</button></div>');
   }
   function collect() {
@@ -94,12 +95,13 @@
   async function preview() {
     if(!state||state.busy)return;const current=state,seq=session;
     try{
-      collect();current.busy=true;PR.$('#orgAI').disabled=true;
-      const p=await post('/api/classification/preview',{paper_ids:current.ids});
+      collect();current.allowNewFolders=PR.$('#orgAllowNewFolders').checked;current.busy=true;PR.$('#orgAI').disabled=true;
+      const p=await post('/api/classification/preview',{paper_ids:current.ids,allow_new_folders:current.allowNewFolders});
       if(seq!==session){if(p.id)post('/api/classification/cancel',{id:p.id}).catch(()=>{});return;}
       current.preview=p;current.busy=false;
       shell('<h3>先确认发送范围</h3><p>仅在你勾选并点击下方按钮后，才会向配置的模型发送这些内容。模型只给出建议，不会直接改动分类。</p>'+
         '<dl class="org-provider"><dt>服务商</dt><dd>'+E(p.provider)+'</dd><dt>目的地址</dt><dd>'+E(p.endpoint)+'</dd><dt>模型</dt><dd>'+E(p.model)+'</dd></dl>'+
+        '<p class="hint">每篇按需给出 0–4 个 AI 标签，不凑数量；'+(p.allow_new_folders?'本批最多建议 1 个新文件夹。':'只选已有文件夹，不建议新建。')+'</p>'+
         '<p>将发送所选 '+current.ids.length+' 篇论文的标题、摘要和有限正文片段，以及已有分类标签和可选文件夹名称。不会发送原始 PDF、图片、笔记或整篇正文。</p>'+
         '<details open><summary>查看将发送的完整文本</summary><pre class="org-payload">'+E(p.prompt || JSON.stringify(p.messages || {papers:p.papers,folders:p.folders},null,2))+'</pre></details>'+
         '<label class="check org-consent"><input type="checkbox" id="orgConsent">我同意将以上文本发送到此模型服务</label><p class="org-error" id="orgError" role="alert"></p>'+

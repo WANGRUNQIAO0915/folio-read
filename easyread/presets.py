@@ -3,6 +3,9 @@
 # 常见的 OpenAI 兼容服务。group：local 本机开源模型 / free 有免费模型或免费额度 / paid 付费。
 # models 是推荐的模型名（设置页里可选，也能手填）。模型名和免费政策会变，以服务商页面为准。
 PRESETS = [
+    {"id": "llamacpp", "group": "local", "name": "llama.cpp / DFlash", "base_url": "http://127.0.0.1:8080/v1", "model": "qwen3.8-27b-q6k-dflash2", "key": False,
+     "models": ["qwen3.8-27b-q6k-dflash2"], "vision": True, "reasoning_effort": "none",
+     "note": "连接已启动的本机 llama.cpp 服务。模型名以服务的 /v1/models 为准；翻译默认关闭深度思考，单批逐页处理。"},
     {"id": "ollama", "group": "local", "name": "Ollama", "base_url": "http://127.0.0.1:11434/v1", "model": "qwen3:8b", "key": False,
      "models": ["qwen3:8b", "qwen3:14b", "qwen2.5:14b", "glm4:9b", "gemma3:12b", "deepseek-r1:8b"],
      "key_url": "https://ollama.com/download", "note": "装好 Ollama，再 ollama pull qwen3:8b。完全离线、免费；8B 模型要 8 GB 左右显存，14B 译得更好。"},
