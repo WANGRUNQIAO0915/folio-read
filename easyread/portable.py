@@ -109,12 +109,18 @@ def normalize(data):
     if isinstance(paper.get('translation'),dict):
         clean_paper['translation']=pick(paper['translation'],'translation')
         clean_paper['translation']['done_pages']=sorted({p for p in paper['translation'].get('done_pages',[]) if isinstance(p,int) and 0<p<=10000})
-    return {'schema': 1, 'kind': 'folio-mobile-paper', 'paper_id': pid,
+    result = {'schema': 1, 'kind': 'folio-mobile-paper', 'paper_id': pid,
             'paper': clean_paper,
             'reader': clean_reader(data.get('reader')),
             'discussion': {'entries': [pick(e, 'entry') for e in (data.get('discussion') or {}).get('entries', [])]},
             'item': item, 'images': {k: v for k, v in (data.get('images') or {}).items() if safe_key(k) and isinstance(v, str) and re.fullmatch(r'data:image/(?:png|jpeg|webp|gif);base64,[a-zA-Z0-9+/=\s]+', v)},
             'imported_at': data.get('imported_at') or datetime.now(timezone.utc).isoformat()}
+    if isinstance(data.get('organization'), dict):
+        from .organization import export_subset, assignment
+        result['organization'] = export_subset(data['organization'], [pid])
+        if pid in result['organization']['assignments']:
+            item['tags'] = assignment(result['organization'], pid)['tags']
+    return result
 
 
 def cloud_op(reader, op, event_id=None):

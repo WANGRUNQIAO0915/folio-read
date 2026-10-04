@@ -23,7 +23,9 @@ def scope(lib, body: dict) -> dict:
     allow_general = body.get('allow_general', True)
     if not isinstance(include_notes, bool) or not isinstance(allow_general, bool):
         raise ValueError('知识库选项必须为布尔值')
-    papers = [ws.id for ws in lib.all() if not category or category in (ws.load('item') or {}).get('tags', [])]
+    from .organization import Organization, assignment, paper_id
+    organization = Organization(lib).load()
+    papers = [ws.id for ws in lib.all() if not category or category in assignment(organization, paper_id(ws))['tags']]
     if not papers:
         raise ValueError('这个范围还没有文章，请先导入 PDF 或选择其他分类')
     return {'mode': 'knowledge', 'question': question, 'papers': papers, 'category': category,

@@ -114,3 +114,7 @@ iPhone 测试版支持独立导入 PDF、阅读、批注和资料库检索。手
 Folio Read 基于 [Edwardxlai/easyread](https://github.com/Edwardxlai/easyread) 开发，保留上游 [MIT License](LICENSE) 与 [原版说明](docs/UPSTREAM-README.md)。在此基础上增加了个人资料库问答、研究主题、阅读工具与 Windows 桌面交付，并调整了阅读界面。本项目与上游无官方关联。
 
 上游基线提交：`9e2feee99578c520ac2d0fd056e80bbee33bd897`。
+
+### 文献文件夹与 AI 分类
+
+在软件内创建文件夹、导入时选位置，之后批量移动论文并添加多个标签；原始 PDF 保持不变。AI 分类先显示接收服务和待发送片段，明确同意后生成建议，检查确认后再保存。文件夹与标签随共享资料库同步。详见[分类使用说明](docs/library-organization.md)。

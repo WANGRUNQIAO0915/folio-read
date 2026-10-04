@@ -1,7 +1,7 @@
 /* Google Identity Services. Per-file sync remains the default; folder scanning requires an explicit read grant. Tokens stay in memory. */
 (function (root) {
   'use strict';
-  const C=root.FolioMobile, S=root.FolioStorage;
+  const C=root.FolioMobile, S=root.FolioStorage,O=root.FolioOrganization;
   const API='https://www.googleapis.com/drive/v3/files';
   const SCOPE='https://www.googleapis.com/auth/drive.file';
   const FOLDER_READ_SCOPE='https://www.googleapis.com/auth/drive.readonly',MAX_SOURCE=128*1024*1024;
@@ -138,6 +138,8 @@
     return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(x=>x.toString(16).padStart(2,'0')).join('');
   }
   const contentHash=data=>hashValue({paper:data.paper,images:data.images,discussion:data.discussion,
+    item:Object.fromEntries(['status','starred','rating','meta_override'].filter(k=>Object.hasOwn(data.item || {},k)).map(k=>[k,data.item[k]]))});
+  const legacyContentHash=data=>hashValue({paper:data.paper,images:data.images,discussion:data.discussion,
     item:Object.fromEntries(['tags','status','starred','rating','meta_override'].filter(k=>Object.hasOwn(data.item || {},k)).map(k=>[k,data.item[k]]))});
   async function folder(files) {
     const existing=files.filter(f=>f.appProperties.folioType==='folder').sort((a,b)=>a.id.localeCompare(b.id))[0];
@@ -296,6 +298,7 @@
   async function getPaper(file,files) {
     const data=C.normalize(await download(file));
     if(data.paper_id!==file.appProperties.folioPaperId) throw new Error('云盘论文标识不匹配。');
+    if(data.organization&&S.mergeOrganization)await S.mergeOrganization(data.organization);
     data.reader=C.materialize([data.reader],await opsFor(files,data.paper_id));
     data.bound_account=account.permissionId;data.pending=[];data.synced_once=true;data.cloud_file_id=file.id;data.cloud_content_hash=await contentHash(data);
     return data;
@@ -312,11 +315,15 @@
       await S.source(data.paper_id,{...source,bound_account:account.permissionId});
     }
     const bundle=C.normalize(data),hash=await contentHash(bundle);
-    if(!remoteFile || data.content_dirty || (data.cloud_content_hash && hash!==data.cloud_content_hash)) {
-      // 并发内容修改不覆盖另一端：本机修订通过批注事件继续同步。
-      if(remoteFile && data.cloud_content_hash && remoteFile.appProperties.folioContent && remoteFile.appProperties.folioContent!==data.cloud_content_hash && data.paper.meta.text_status==='original') {
-        throw new Error('另一端已更新正文，请先下载最新版后再修改正文。原稿和批注仍然保留。');
-      }
+    let uploadContent=!remoteFile || data.content_dirty || (data.cloud_content_hash && hash!==data.cloud_content_hash && await legacyContentHash(bundle)!==data.cloud_content_hash);
+    if(uploadContent && remoteFile && data.cloud_content_hash && remoteFile.appProperties.folioContent && remoteFile.appProperties.folioContent!==data.cloud_content_hash) {
+      // Older clients included tags in their content hash. Compare the actual
+      // normalized body before treating a metadata/hash-format change as a conflict.
+      const current=await getPaper(remoteFile,files);
+      if(await contentHash(current)===hash)uploadContent=false;
+      else if(data.paper.meta.text_status==='original')throw new Error('另一端已更新正文，请先下载最新版后再修改正文。原稿和批注仍然保留。');
+    }
+    if(uploadContent) {
       remoteFile=await upload((bundle.paper.meta.short_zh || bundle.paper.meta.title_zh || bundle.paper.meta.title_en || '论文').slice(0,60)+'.folio.json',bundle,{folioType:'paper',folioPaperId:data.paper_id,folioContent:hash},parent);
       files.push(remoteFile);
     }
@@ -332,6 +339,7 @@
     const fresh=await list(), remoteBundle=await getPaper(latest(fresh,data.paper_id),fresh);
     const reader=C.materialize([data.reader,remoteBundle.reader],await opsFor(fresh,data.paper_id));
     const index={...C.normalize({...remoteBundle,reader}),images:{}};
+    delete index.organization;delete index.item.tags;
     index.reader.progress={block:null,ratio:0,at:''};
     const indexHash=await hashValue(index),priorIndex=latestKind(fresh,data.paper_id,'index');
     if(!priorIndex || priorIndex.appProperties.folioContent!==indexHash) {
@@ -341,6 +349,33 @@
     return S.mergeRemote(data.paper_id,reader,sent,{bound_account:account.permissionId,cloud_file_id:remoteFile.id,cloud_content_hash:await contentHash(remoteBundle),content_dirty:false,
       paper:remoteBundle.paper,images:remoteBundle.images,discussion:remoteBundle.discussion,item:remoteBundle.item,
       expected_content:C.canonical({paper:data.paper,images:data.images,discussion:data.discussion,item:data.item})});
+  }
+  async function syncOrganization(files) {
+    if(!O || !S.organization || !S.mergeOrganization)return;
+    const bound=await S.setting('organization_bound_account');
+    if(bound && bound!==account.permissionId)throw new Error('文献分类已绑定其他 Google 账号，请切回原账号后同步。');
+    // Never transmit organization belonging to a different account, even on the first organization sync.
+    const papers=await S.all();
+    if(papers.some(p=>!p.demo&&p.bound_account&&p.bound_account!==account.permissionId))throw new Error('文献分类包含其他 Google 账号的论文，请切回原账号后同步。');
+    const eligible=new Set(papers.filter(p=>!p.demo).map(p=>p.paper_id));
+    for(const f of files)if(f.appProperties?.folioType==='paper')eligible.add(f.appProperties.folioPaperId);
+    let remote=O.empty();
+    const cacheKey='drive-organization-cache:'+account.permissionId,cache=await S.setting(cacheKey)||{};
+    async function collect(list){for(const f of list.filter(f=>f.appProperties?.folioType==='organization')){
+      let data=cache[f.id];if(!data){const raw=await download(f);if(raw.schema!==1|| (raw.kind&&raw.kind!=='folio-organization'))throw new Error('云盘分类文件格式无效，请保留文件并重试。');data=O.normalize(raw.organization||raw);cache[f.id]=data;}
+      remote=O.merge(remote,data);
+    }}
+    await collect(files);
+    const merged=await S.mergeOrganization(remote),outgoing=O.subset(merged,[...eligible]);
+    outgoing.assignments=Object.fromEntries(Object.entries(outgoing.assignments).filter(([,a])=>a.folder_id||a.tags.length||a.version.at||a.version.id));
+    const hash=await hashValue(outgoing);
+    if((Object.keys(outgoing.folders).length||Object.keys(outgoing.assignments).length)&&!files.some(f=>f.appProperties?.folioType==='organization'&&f.appProperties.folioContent===hash)){
+      // Bind before uploading; ambiguous network completion may already have created a snapshot.
+      await S.setting('organization_bound_account',account.permissionId);
+      const file=await upload('organization-'+crypto.randomUUID()+'.json',{schema:1,kind:'folio-organization',organization:outgoing},{folioType:'organization',folioContent:hash},await folder(files));files.push(file);cache[file.id]=outgoing;
+    }
+    if(Object.keys(remote.folders).length||Object.keys(remote.assignments).length)await S.setting('organization_bound_account',account.permissionId);
+    const fresh=await list();await collect(fresh);await S.mergeOrganization(remote);await S.setting(cacheKey,cache);
   }
   const drive={login,loadIdentity,list,getPaper,latest,indexes,sourceFor,
     get connected(){return !!token && Date.now()<expires;},get account(){return account;},get syncing(){return syncing;},
@@ -354,6 +389,7 @@
         await S.setting('lastSyncAttempt',new Date().toISOString());
         let id=await S.setting('deviceId');if(!id) {id=crypto.randomUUID();await S.setting('deviceId',id);}
         const files=await list();
+        if(O&&S.organization){const bound=await S.setting('organization_bound_account');if(bound&&bound!==account.permissionId)throw new Error('文献分类已绑定其他 Google 账号，请切回原账号后同步。');}
         await importFolderPdfs(files);
         const data=await S.all(),errors=[];
         for(let i=0;i<data.length;i++) {
@@ -361,6 +397,7 @@
           if(onProgress) onProgress(i+1,data.length);
           try {await syncPaper(data[i],files,id);} catch(error) {errors.push(error);}
         }
+        const organizationFiles=await list();await syncOrganization(organizationFiles);
         const fresh=await list();await indexes(fresh);
         if(errors.length)throw new Error(errors[0].message+(errors.length>1?'（'+errors.length+' 篇尚未完成同步）':''));
         if(!['partial','permission_required'].includes(lastImportReport?.status))await S.setting('lastSync',new Date().toISOString());

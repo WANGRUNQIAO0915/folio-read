@@ -42,6 +42,9 @@ jobs:
           node tests/test_citations.cjs
           node tests/test_outline.cjs
           node tests/test_mobile_knowledge.cjs
+          node tests/test_mobile_organization.cjs
+          node tests/test_mobile_organization_drive.cjs
+          node tests/test_mobile_organization_ui.cjs
       - name: 启动服务，打开文献库页
         run: |
           cd "$RUNNER_TEMP"
@@ -71,13 +74,22 @@ jobs:
       - name: Install application and pinned Playwright
         run: |
           python -m pip install .
-          npm install --prefix "$RUNNER_TEMP/folio-playwright" --no-save --package-lock=false playwright@1.58.2
+          npm install --prefix "$RUNNER_TEMP/folio-playwright" --no-save --package-lock=false playwright@1.58.2 jsdom@26.1.0
           "$RUNNER_TEMP/folio-playwright/node_modules/.bin/playwright" install --with-deps chromium
       - name: Chromium UI regression
         env:
           PLAYWRIGHT: ${{ runner.temp }}/folio-playwright/node_modules/playwright
           BROWSER_ARTIFACTS: ${{ runner.temp }}/folio-browser-artifacts
         run: node tests/test_browser.cjs
+      - name: Classification DOM regression
+        env:
+          JSDOM: ${{ runner.temp }}/folio-playwright/node_modules/jsdom
+        run: node tests/test_classification_dom.cjs
+      - name: Classification Chromium regression
+        env:
+          PLAYWRIGHT: ${{ runner.temp }}/folio-playwright/node_modules/playwright
+          BROWSER_ARTIFACTS: ${{ runner.temp }}/folio-browser-artifacts/classification
+        run: node tests/test_classification_browser.cjs
       - name: Upload Chromium screenshots, traces, and logs
         if: always()
         uses: actions/upload-artifact@v4

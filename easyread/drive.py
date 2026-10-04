@@ -468,7 +468,14 @@ class Drive:
     @staticmethod
     def content_hash(data):
         content={k:data[k] for k in ('paper','images','discussion')}
-        content['item']={k:data.get('item',{})[k] for k in ('tags','status','starred','rating','meta_override') if k in data.get('item',{})}
+        content['item']={k:data.get('item',{})[k] for k in ('status','starred','rating','meta_override') if k in data.get('item',{})}
+        return hashlib.sha256(P.canonical(content).encode()).hexdigest()
+
+    @staticmethod
+    def legacy_content_hash(data):
+        """Recognize the tags-inclusive hash stored by pre-organization clients."""
+        content = {k: data[k] for k in ('paper', 'images', 'discussion')}
+        content['item'] = {k: data.get('item', {})[k] for k in ('tags', 'status', 'starred', 'rating', 'meta_override') if k in data.get('item', {})}
         return hashlib.sha256(P.canonical(content).encode()).hexdigest()
 
     @staticmethod
@@ -515,7 +522,9 @@ class Drive:
             if path.is_file():
                 mime = {'.png': 'png', '.jpg': 'jpeg', '.jpeg': 'jpeg', '.gif': 'gif'}.get(path.suffix.lower(), 'webp')
                 images[rel] = 'data:image/' + mime + ';base64,' + base64.b64encode(path.read_bytes()).decode()
-        return P.normalize(dict(paper_id=ws.id, paper=paper, reader=ws.load('reader'), item=ws.load('item'), discussion=ws.load('discussion'), images=images))
+        from .organization import Organization, paper_id, export_subset
+        organization = export_subset(Organization(self.lib).load(), [paper_id(ws)])
+        return P.normalize(dict(paper_id=ws.id, paper=paper, reader=ws.load('reader'), item=ws.load('item'), discussion=ws.load('discussion'), images=images, organization=organization))
 
     def select(self, ids, sync_all=False):
         selected = set(ids)
@@ -536,7 +545,24 @@ class Drive:
         parent = self.folder(files)
         self.upload_source(ws,pid,files,parent)
         content_hash = self.content_hash(data)
-        if remote and cloud.get('content_hash')==content_hash and remote['appProperties'].get('folioContent') not in (None,content_hash):
+        legacy_data = dict(data, item=ws.load('item') or {})
+        unchanged_local = cloud.get('content_hash') in (content_hash, self.legacy_content_hash(legacy_data))
+        observed_remote = cloud.get('remote_content_hash', cloud.get('content_hash'))
+        remote_hash = (remote or {}).get('appProperties', {}).get('folioContent')
+        if remote and cloud.get('content_hash') and 'remote_content_hash' not in cloud and not unchanged_local and remote_hash not in (None, cloud['content_hash'], content_hash):
+            # Old sidebar tag edits also changed item.json. The immutable old
+            # snapshot is the only reliable baseline for distinguishing those
+            # edits from changed article content during the hash migration.
+            baseline_file = next((f for f in files if f.get('appProperties', {}).get('folioType') == 'paper'
+                                  and f['appProperties'].get('folioPaperId') == pid
+                                  and f['appProperties'].get('folioContent') == cloud['content_hash']), None)
+            if not baseline_file:
+                raise ValueError('旧版同步基线缺失且云端正文已更新；已保留两端内容，请先备份后重新导入云端论文')
+            baseline = P.normalize(self.download(baseline_file))
+            if baseline['paper_id'] != pid:
+                raise ValueError('旧版同步基线标识不匹配，已保留本机内容')
+            unchanged_local = self.content_hash(baseline) == content_hash
+        if remote and unchanged_local and remote_hash not in (None, content_hash, observed_remote):
             self.pull(remote['id'], files=files, update_content=True, expected_content=content_versions)
             data=self.bundle(ws);local=ws.load('reader');cloud=local.get('_cloud') or {};content_hash=self.content_hash(data)
         if not remote or (remote['appProperties'].get('folioContent') != content_hash and cloud.get('content_hash') != content_hash):
@@ -558,9 +584,14 @@ class Drive:
             merged = P.materialize([local, remote_data['reader']], events + pending)
             merged['rev'] = current.get('rev', 0) + 1
             merged['_cloud'] = dict(cloud, enabled=True, account=self.account['permissionId'], synced_once=True, pending=pending,
-                                     content_hash=content_hash, synced_at=now_iso())
+                                     content_hash=content_hash, remote_content_hash=(remote or {}).get('appProperties', {}).get('folioContent'), synced_at=now_iso())
             ws._snapshot(); write_json_atomic(ws.reader_path, merged)
-        index=P.normalize(dict(remote_data,reader=merged,images={}))
+        self._merge_bundle_organization(remote_data)
+        index=P.normalize(dict(remote_data, reader=merged, images={}))
+        # Classification has its own snapshots. Do not re-upload article text
+        # for a folder rename, tag edit, or tombstone.
+        index.pop('organization', None)
+        index['item'].pop('tags', None)
         index['reader']['progress']=dict(block=None,ratio=0,at='')
         index_hash=hashlib.sha256(P.canonical(index).encode()).hexdigest()
         prior_index=self.latest_kind(fresh,pid,'index')
@@ -568,6 +599,61 @@ class Drive:
             fresh.append(self.upload((index['paper']['meta'].get('title_zh') or index['paper']['meta'].get('title_en') or ws.id)[:60]+'.knowledge.json',index,
                                      dict(folioType='index',folioPaperId=pid,folioContent=index_hash),parent))
         return fresh
+
+    def _organization_account(self, bind=False):
+        """Logical metadata must not leak after switching the connected account."""
+        path = self.lib.root / '.organization-account.json'
+        with dir_lock(self.lib.root, '.organization.lock'):
+            account = (read_json(path, {}) or {}).get('account')
+            if account and account != self.account['permissionId']:
+                raise ValueError('分类资料已绑定另一 Google 账号，请切回原账号')
+            if bind and not account:
+                write_json_atomic(path, {'account': self.account['permissionId']})
+
+    def _merge_bundle_organization(self, data):
+        from .organization import Organization, empty, tags, has_data
+        if isinstance(data.get('organization'), dict):
+            state = data['organization']
+        else:
+            state = empty()
+            state['assignments'][data['paper_id']] = {'folder_id': None, 'tags': tags(data.get('item', {}).get('tags', []), False), 'version': {'at': '', 'id': ''}}
+        if has_data(state):
+            self._organization_account(bind=True)
+        return Organization(self.lib).merge(state)
+
+    def _sync_organization(self, files, publish=True):
+        """Immutable snapshots merge by record, including empty-folder tombstones."""
+        from .organization import Organization, paper_id, subset, has_data
+        self._organization_account()
+        organization = Organization(self.lib)
+        states = []
+        for file in files:
+            if file.get('appProperties', {}).get('folioType') != 'organization':
+                continue
+            data = self.download(file)
+            if not isinstance(data, dict):
+                raise ValueError('云端分类文件无效，请保留文件并重试')
+            state = data.get('organization', data)
+            if not isinstance(state, dict) or state.get('schema') != 1 or not isinstance(state.get('folders'), dict) or not isinstance(state.get('assignments'), dict):
+                raise ValueError('云端分类文件无效，请保留文件并重试')
+            states.append(state)
+        if any(has_data(state) for state in states):
+            self._organization_account(bind=True)
+        state = organization.merge(*states)
+        eligible = {paper_id(ws) for ws in self.lib.all() if self.cfg.get('sync_all', True) or (ws.load('reader').get('_cloud') or {}).get('enabled')}
+        # Retain already-synced assignments while excluding never-selected papers.
+        eligible.update(f['appProperties'].get('folioPaperId') for f in files if f.get('appProperties', {}).get('folioType') == 'paper')
+        outgoing = subset(state, eligible)
+        outgoing['assignments'] = {pid: row for pid, row in outgoing['assignments'].items() if row['folder_id'] or row['tags'] or row['version']['at'] or row['version']['id']}
+        if not publish or not (outgoing['folders'] or outgoing['assignments']):
+            return files
+        digest = hashlib.sha256(P.canonical(outgoing).encode()).hexdigest()
+        if not any(f.get('appProperties', {}).get('folioType') == 'organization' and f['appProperties'].get('folioContent') == digest for f in files):
+            self._organization_account(bind=True)
+            payload = {'schema': 1, 'kind': 'folio-organization', 'organization': outgoing}
+            files.append(self.upload('organization-' + str(uuid.uuid4()) + '.json', payload,
+                                     {'folioType': 'organization', 'folioContent': digest}, self.folder(files)))
+        return files
 
     def sync(self):
         self.identify()
@@ -579,9 +665,16 @@ class Drive:
             bound = (ws.load('reader').get('_cloud') or {}).get('account')
             if bound and bound != self.account['permissionId']:
                 raise ValueError('所选论文已绑定另一 Google 账号，请切回原账号')
+        self._organization_account()
+        organization_errors = []
+        try:
+            files = self._sync_organization(files, publish=False)
+        except Exception as error:
+            organization_errors.append(dict(name='分类资料', error=str(error)[:200]))
         if self.cfg.get('folder_import_enabled') and FOLDER_READ_SCOPE in self.granted_scopes:
             self.folder(files)
         imported, errors = self.import_folder_pdfs(files)
+        errors.extend(organization_errors)
         workspaces = selected()
         for i, ws in enumerate(workspaces):
             self.message = f'正在同步 {i+1} / {len(workspaces)} 篇'
@@ -597,6 +690,10 @@ class Drive:
                     self.pull(self.latest(files, pid)['id'], files=files)
                 except Exception as error:
                     errors.append(dict(name=pid, error=str(error)[:200]))
+        try:
+            files = self._sync_organization(self.list_files())
+        except Exception as error:
+            errors.append(dict(name='分类资料', error=str(error)[:200]))
         self.files = files
         self.import_errors = errors
         self.cfg['last_sync_attempt'] = now_iso()
@@ -613,6 +710,7 @@ class Drive:
         file = next((f for f in files if f['id'] == file_id and (f.get('appProperties') or {}).get('folioType') == 'paper'), None)
         if not file:
             raise ValueError('找不到这篇云端论文，请刷新后再试')
+        self._organization_account()
         data = P.normalize(self.download(file)); pid = data['paper_id']
         if pid != file['appProperties'].get('folioPaperId'):
             raise ValueError('云端论文标识不匹配')
@@ -676,8 +774,9 @@ class Drive:
             merged = P.materialize([current, remote], cloud.get('pending', []))
             merged['rev'] = current.get('rev', 0) + 1
             merged['_cloud'] = dict(cloud, enabled=True, account=self.account['permissionId'], pending=cloud.get('pending', []),
-                                    synced_once=True,content_hash=self.content_hash(data))
+                                    synced_once=True, content_hash=self.content_hash(data), remote_content_hash=file.get('appProperties', {}).get('folioContent'))
             ws._snapshot(); write_json_atomic(ws.reader_path, merged)
+        self._merge_bundle_organization(data)
         self.files = files; self.message = '论文已下载到 Windows，可离线阅读'
 
     def run(self, action, *args):

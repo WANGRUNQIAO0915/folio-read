@@ -32,8 +32,11 @@ class Library:
         return [Workspace(p) for p in sorted(self.root.iterdir()) if p.is_dir() and not p.name.startswith(".") and (p / "paper.json").exists()]
 
     # ---------- 列表摘要 ----------
-    def summary(self, ws: Workspace) -> dict:
+    def summary(self, ws: Workspace, organization=None) -> dict:
         from .scholar import visible_rank
+        from .organization import Organization, assignment, paper_id
+        organization = Organization(self).load() if organization is None else organization
+        classification = assignment(organization, paper_id(ws))
         paper = ws.load("paper") or {}
         meta = dict(paper.get("meta", {}))
         item = ws.load("item") or {}
@@ -62,7 +65,8 @@ class Library:
             "pages": meta.get("page_count", 0), "done_pages": len(tr.get("done_pages", [])),
             "abstract": abstract,
             "meta_override": item.get("meta_override") or {},
-            "tags": item.get("tags", []), "status": status, "starred": bool(item.get("starred")),
+            "organization_id": paper_id(ws), "folder_id": classification["folder_id"], "organization_version": classification["version"],
+            "tags": classification["tags"], "status": status, "starred": bool(item.get("starred")),
             "added": item.get("added", ""), "last_opened": item.get("last_opened", ""),
             "progress": (reader.get("progress") or {}).get("ratio", 0),
             "notes": len([n for n in notes if n.get("kind") != "highlight"]),
@@ -75,7 +79,9 @@ class Library:
         }
 
     def list(self) -> list[dict]:
-        return [self.summary(ws) for ws in self.all()]
+        from .organization import Organization
+        organization = Organization(self).load()
+        return [self.summary(ws, organization) for ws in self.all()]
 
     # ---------- 导入 ----------
     def create_from_pdf(self, data: bytes, filename: str, meta: dict | None = None) -> tuple[Workspace, bool]:

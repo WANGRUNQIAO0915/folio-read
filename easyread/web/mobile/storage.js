@@ -22,11 +22,16 @@
       tx.onerror=tx.onabort=()=>reject(new Error('保存失败，可能是设备空间不足。请先备份阅读文件。'));
     });
   }
+  const O=root.FolioOrganization;
+  async function readOrganization(){const stored=await store.setting('organization');if(stored&&(stored.schema!==1||!stored.folders||typeof stored.folders!=='object'||Array.isArray(stored.folders)||!stored.assignments||typeof stored.assignments!=='object'||Array.isArray(stored.assignments)))throw new Error('文献分类数据格式无效，请先保留备份后恢复。');return O.seed(stored,await store.all());}
   let writes = Promise.resolve();
   function serial(action) {
     const result=writes.then(action);writes=result.catch(()=>{});return result;
   }
   const store = {
+    organization:()=>readOrganization(),
+    changeOrganization:fn=>serial(async()=>{const next=O.normalize(fn(await readOrganization()));await store.setting('organization',next);return next;}),
+    mergeOrganization:value=>serial(async()=>{const next=O.merge(await readOrganization(),value);await store.setting('organization',next);return next;}),
     all:()=>transaction('papers','readonly',s=>s.getAll()),
     get:id=>transaction('papers','readonly',s=>s.get(id)),
     save:data=>serial(()=>transaction('papers','readwrite',s=>s.put(data))),
@@ -34,6 +39,7 @@
     indexes:()=>transaction('indexes','readonly',s=>s.getAll()),
     saveIndex:data=>serial(()=>transaction('indexes','readwrite',s=>s.put(data))),
     importBundle:(data,options={})=>serial(async()=>{
+      if(data.organization&&O){const next=O.merge(await readOrganization(),data.organization);await store.setting('organization',next);}
       const old=await store.get(data.paper_id);
       if(old && options.preserveExisting)return old;
       if(old){

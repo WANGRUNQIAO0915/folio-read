@@ -251,3 +251,31 @@ body.resizing { cursor: col-resize; user-select: none; }
 .search-hit { display: block; margin-top: 7px; font-size: 12px; line-height: 1.65; color: var(--ink-2); text-decoration: none; }
 .search-hit b { color: var(--accent); font-weight: 500; }
 .search-hit:hover { color: var(--ink); text-decoration: underline; }
+
+/* Shared-library organization is distinct from multi-valued tags. */
+.folder-more { display: flex; padding: 4px; color: var(--ink-3); border-radius: 5px; }
+.folder-more:hover { background: var(--surface-2); }
+.paper-thumb { position: relative; }
+.batch-check { position: absolute; z-index: 1; top: -7px; left: -7px; width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
+.organization-detail { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 12px 0; }
+.organization-detail > span { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.organization-head { display: flex; align-items: center; justify-content: space-between; }
+.organization-head h2 { margin: 0; }
+#organizationDlg .dialog { max-height: 90vh; overflow: auto; }
+#organizationDlg .actions { display: flex; gap: 10px; flex-wrap: wrap; position: sticky; bottom: -24px; background: var(--bg); padding: 14px 0; }
+#organizationDlg .grow { flex: 1; }
+.org-batch { display: flex; gap: 10px; align-items: end; padding: 12px 0; }
+.org-paper-list { display: grid; gap: 12px; margin: 12px 0; }
+.org-paper { border: 1px solid var(--rule); border-radius: 10px; padding: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.org-paper h3 { grid-column: 1 / -1; margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+.org-paper label, .org-batch label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; min-width: 0; }
+.org-paper label[hidden] { display: none; }
+.org-paper .hint { grid-column: 1 / -1; margin: 0; }
+.org-paper input, .org-paper select { width: 100%; min-width: 0; }
+.org-message { border-left: 3px solid var(--accent); padding: 10px; background: var(--surface-2); }
+.org-error { color: var(--danger); overflow-wrap: anywhere; }
+.org-provider { display: grid; grid-template-columns: 70px minmax(0,1fr); gap: 6px 12px; padding: 12px; background: var(--surface-2); border-radius: 8px; font-size: 13px; }
+.org-provider dd { margin: 0; overflow-wrap: anywhere; }
+.org-payload { font: 12px/1.6 var(--sans); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; padding: 12px; background: var(--surface-2); border-radius: 8px; }
+.org-consent { margin: 18px 0; align-items: start; }
+@media(max-width:600px) { .org-paper { grid-template-columns: 1fr; } .org-batch { flex-wrap: wrap; } .list-head { flex-wrap: wrap; } }

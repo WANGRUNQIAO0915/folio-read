@@ -1,7 +1,7 @@
 /* 文献库：列表、筛选、排序、键盘操作、状态轮询。 */
 (function (PR) {
   "use strict";
-  const L = (PR.lib = { items: [], view: "all", tag: null, q: "", sort: PR.ls.get("easyread-sort", "opened"), selected: null, engine: "claude" });
+  const L = (PR.lib = { items: [], view: "all", tag: null, folder: undefined, batch: new Set(), selecting: false, organization: {folders:{},assignments:{}}, q: "", sort: PR.ls.get("easyread-sort", "opened"), selected: null, engine: "claude" });
   const prefs = PR.ls.get("easyread-prefs", {});
   PR.applyTheme(prefs.theme);
 
@@ -34,6 +34,9 @@
     L.version = d.version;
     engineChip();
     L.items = d.items;
+    L.organization = d.organization || {folders:{},assignments:{}};
+    if (L.folder && (!L.organization.folders[L.folder] || L.organization.folders[L.folder].deleted)) L.folder = null;
+    L.batch = new Set([...L.batch].filter(id => L.byId(id)));
     if(PR.refreshNavigation)PR.refreshNavigation(d.items);
     L.render();
     schedule();
@@ -50,7 +53,8 @@
     const view = L.VIEWS.find((v) => v[0] === L.view) || L.VIEWS[0];
     const q = L.q.trim().toLowerCase();
     let list = L.items.filter(view[3]);
-    if (L.tag) list = list.filter((i) => i.tags.includes(L.tag));
+    if (L.tag) list = list.filter((i) => (i.tags || []).includes(L.tag));
+    if (L.folder !== undefined) list = list.filter((i) => (i.folder_id || null) === L.folder);
     if (q) list = list.filter((i) => L.searchHits.has(i.id));
     const key = { opened: (i) => i.last_opened || i.added, added: (i) => i.added, year: (i) => String(i.year || ""), title: (i) => i.title_zh || i.title_en };
     const k = key[L.sort] || key.opened;
@@ -79,23 +83,27 @@
     const sub = i.title_zh && i.title_en ? '<div class="t2" lang="en">' + PR.esc(i.title_en) + "</div>" : "";
     const authors = (i.authors || '').split(/[,，、;]/).map(s => s.trim()).filter(Boolean);
     const bits = [authors[0] && (authors[0] + (authors.length > 1 ? ' 等' : '')), i.year, i.venue || i.arxiv].filter(Boolean);
-    const tags = (i.tags || []).map((t) => '<span class="chip cat">' + PR.icon("folder", "sm") + PR.esc(t) + "</span>").join("");
+    const tags = (i.tags || []).map((t) => '<span class="chip cat">' + "# " + PR.esc(t) + "</span>").join("");
+    const folder = L.folderLabel ? L.folderLabel(i.folder_id) : "";
+    const folderChip = folder ? '<span class="chip folder-chip">' + PR.icon("folder", "sm") + PR.esc(folder) + "</span>" : "";
     const thumb = i.thumb ? '<div class="thumb" style="background-image:url(' + i.thumb + ')"></div>' : '<div class="thumb blank">' + PR.icon("pdf") + "</div>";
     const notes = i.notes + i.highlights ? '<span class="stat">' + PR.icon("note", "sm") + (i.notes + i.highlights) + (i.open_questions ? " · " + i.open_questions + " 问待答" : "") + "</span>" : "";
     const pct = Math.max(0, Math.min(100, Math.round((i.progress || 0) * 100)));
     const prog = '<div class="reading-progress"><span>阅读 ' + pct + '%</span><div class="meter" role="progressbar" aria-label="阅读进度" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></div></div>';
     const hits = (L.searchHits.get(i.id) || []).map((hit) => '<a class="search-hit" href="/read/' + i.id + (hit.anchor ? '#b-' + encodeURIComponent(hit.anchor) : '') + '"><b>' + PR.esc(hit.kind + (hit.page ? ' · 第 ' + hit.page + ' 页' : '')) + '</b> ' + PR.esc(hit.snippet) + '</a>').join('');
-    return '<div class="row' + (L.selected === i.id ? " on" : "") + '" data-id="' + i.id + '" role="option" draggable="true">' + thumb +
+    return '<div class="row' + (L.selected === i.id ? " on" : "") + '" data-id="' + i.id + '" role="option" draggable="true">' + '<div class="paper-thumb">' + (L.selecting ? '<input type="checkbox" class="batch-check" data-batch="' + i.id + '" aria-label="选择论文：' + PR.esc(title) + '"' + (L.batch.has(i.id) ? " checked" : "") + ' >' : "") + thumb + "</div>" +
       '<div><div class="t1">' + (i.starred ? '<span class="star">' + PR.icon("star") + "</span>" : "") + "<span>" + PR.esc(title) + "</span></div>" + sub +
-      '<div class="t3">' + bits.map((b) => "<span>" + PR.esc(String(b)) + "</span>").join("<span>·</span>") + tags + "</div>" + window.FolioJournal.badges(i) + hits + "</div>" +
+      '<div class="t3">' + bits.map((b) => "<span>" + PR.esc(String(b)) + "</span>").join("<span>·</span>") + folderChip + tags + "</div>" + window.FolioJournal.badges(i) + hits + "</div>" +
       '<div class="side-info">' + statusPill(i) + prog + L.jobLine(i) + notes + "</div></div>";
   }
 
   L.render = function () {
     PR.renderSide();
     const list = filtered();
+    L.visibleIds = list.map(i => i.id);
+    if (L.refreshOrganizationToolbar) L.refreshOrganizationToolbar();
     const view = L.VIEWS.find((v) => v[0] === L.view) || L.VIEWS[0];
-    PR.$("#viewTitle").textContent = L.tag ? L.tag : view[1] + (L.view === "all" ? "论文" : "");
+    PR.$("#viewTitle").textContent = L.folder !== undefined ? (L.folderLabel(L.folder) || "未分类") : L.tag ? "标签 · " + L.tag : view[1] + (L.view === "all" ? "论文" : "");
     PR.$("#count").textContent = L.searching ? "正在检索…" : list.length + " 篇";
     PR.$("#list").innerHTML = list.length ? list.map(rowHtml).join("") : emptyHtml();
     if (L.selected && !L.byId(L.selected)) L.select(null);
@@ -143,6 +151,7 @@
 
   /* ---------- 事件 ---------- */
   PR.$("#list").addEventListener("click", (e) => {
+    if (e.target.closest("[data-batch]")) return;
     const r = e.target.closest(".row");
     if (r) L.select(r.dataset.id);
   });

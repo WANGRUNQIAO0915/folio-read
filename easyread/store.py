@@ -243,6 +243,12 @@ class Workspace:
             return result
 
     def patch_item(self, fields: dict) -> dict:
+        if not isinstance(fields, dict):
+            raise ValueError('论文设置必须是对象')
+        if 'tags' in fields or 'folder_id' in fields:
+            from .library import Library
+            from .organization import Organization
+            Organization(Library(self.root.parent), [self]).assign([{'paper_id': self.id, **{k: fields[k] for k in ('tags', 'folder_id') if k in fields}}])
         allowed = {"tags", "status", "starred", "rating", "last_opened", "meta_override", "archived"}
 
         def apply(item):
