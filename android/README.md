@@ -1,16 +1,18 @@
 # Folio Read Android 测试版
 
-基于 `feat/mobile-google-drive` 的 `1a67b2e`，复用现有移动阅读、批注、检索、PDF 导入与 IndexedDB 数据格式。Android 原生外壳以 `WebViewAssetLoader` 提供本地 HTTPS 资源，内置 PDF.js、worker、CMaps、字体、WASM 和 KaTeX。无需首次联网下载阅读组件，不依赖电脑版运行。
+Android 外壳与共享移动端源码已合入 `main`，复用移动阅读、批注、检索、PDF 导入与 IndexedDB 数据格式；当前源码还包含[文件夹与 AI 分类](../docs/library-organization.md)、[中文名称与 PDF 下载名](../docs/chinese-pdf-names.md)。Android 原生外壳以 `WebViewAssetLoader` 提供本地 HTTPS 资源，内置 PDF.js、worker、CMaps、字体、WASM 和 KaTeX。无需首次联网下载阅读组件，不依赖电脑版运行。
 
 ## 安装与范围
 
-在 GitHub Actions 的 **Android test APK** 工作流中下载 `folio-read-android-debug`，解压后安装 `folio-read-0.1.0-test.apk`。这是自签名调试测试包，尚未在 Google Play 发布。Android 8.0（API 26）以上，需可用且较新的 Android System WebView。PDF.js 6.x 以 Chromium 125+ 为支持基线；旧版 WebView 可能无法解析 PDF。
+**源码更新不等于 APK 更新。** Windows v1.1.0-test.2 与手机网页已提供新版功能，本次没有发布新的 Android APK，旧安装包不会自动获得这些功能。Android 构建 / lint 已通过，但运行环境、真机 Google 授权与双向同步、升级安装仍未完成验证。当前 APK 更新需先确定可持续的签名方案；不同签名不能直接覆盖旧安装。
+
+供开发测试：在 GitHub Actions 的 **Android test APK** 工作流中，选择所需源码提交且构建成功的运行，下载 `folio-read-android-debug`，解压后安装 `folio-read-0.1.0-test.apk`。这是自签名调试测试包，尚未在 Google Play 发布。Android 8.0（API 26）以上，需可用且较新的 Android System WebView。PDF.js 6.x 以 Chromium 125+ 为支持基线；旧版 WebView 可能无法解析 PDF。
 
 - 系统文件选择器导入 PDF、阅读 JSON 或 HTML，无需广泛存储权限。
-- 正文、原页缩略图、目录、检索、笔记、字号、主题和本地保存复用移动端。
+- 正文、原页缩略图、目录、检索、笔记、字号、主题和本地保存复用移动端。当前源码的逻辑文件夹 / 标签与中文显示名属于元数据，不会移动原 PDF 或重命名云盘原文件；导出原 PDF 时可使用已确认的中文名称。
 - 设置中导出当前论文为 `.folio.json`；原页中导出完整 PDF。系统保存对话框取消时不报告成功。阅读备份不包含原始 PDF，需分别导出。
 - Google 云盘已接入官方原生授权代码；配置和真实设备授权/双向同步仍需验证，不能把构建通过当作登录成功。
-- AI 沿用自行配置的 HTTPS/CORS API，未经真实服务验证；默认密钥仅在本次页面内存中。勾选保存后存于本应用 IndexedDB，不进入阅读备份或云同步。
+- AI 沿用自行配置的 HTTPS/CORS API，未经真实服务或分类 / 译名质量验证；分类和名称翻译先预览接收服务与发送文本，明确同意后才发送，检查并确认应用后才保存，AI 译名标注为非官方中文题名。默认密钥仅在本次页面内存中。勾选保存后存于本应用 IndexedDB，不进入阅读备份或云同步。
 - 扫描 PDF 不包含 OCR。复杂版式、公式与表格提取的限制与移动版相同。PDF 最多 128 MB、300 页。
 
 清除应用数据或卸载会删除本机论文与笔记；导出备份后再做。自动云备份关闭，防止本机保存的 API 配置进入 Android 备份。Android 应用的数据与浏览器/PWA 数据互相独立。
@@ -29,7 +31,7 @@
 
 默认工作流产出已含原生授权入口的 APK，登记**这一个 APK**的应用 ID/SHA-1 后可直接用同一包重试，无需重编译。未登记时会显示配置错误。没有创建 OAuth 客户端、扩展云账号权限、嵌入 API Key/secret/refresh token，或声称已完成真实账号验证。
 
-每次 CI 的默认 debug 密钥可能不同，**不要拿一个构建的 SHA-1 去登记另一个构建**。新签名包也不能直接覆盖旧安装；卸载会丢本地资料。长期升级、稳定发布和持续 Google 登录需要用户批准后配置固定签名方案。本仓库和 Actions 产物不上传签名私钥。
+每次 CI 的默认 debug 密钥可能不同，**不要拿一个构建的 SHA-1 去登记另一个构建**。只有应用 ID 与签名匹配的包才能覆盖升级；新签名包不能直接覆盖旧安装，卸载会丢本地资料。请先分别导出阅读备份与原 PDF，不要把卸载重装当作无损升级。长期升级、稳定发布和持续 Google 登录需要用户批准后配置固定签名方案。本仓库和 Actions 产物不上传签名私钥。
 
 可用 `-PenableGoogleDrive=false` 构建明确禁用授权的纯本地测试包。
 
