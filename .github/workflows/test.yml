@@ -44,7 +44,41 @@ jobs:
           grep -q "Folio Read" page.html
           curl -sf http://127.0.0.1:8799/web/js/common/confirm.js -o /dev/null
           curl -sf http://127.0.0.1:8799/web/css/base.css -o /dev/null
+          for file in app detail help import settings-library sidebar; do curl -sf "http://127.0.0.1:8799/web/js/library/$file.js" -o /dev/null || exit 1; done
           echo OK
+
+  browser-chromium:
+    # Use the installed package and a synthetic PDF; no user data or model keys.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install application and pinned Playwright
+        run: |
+          python -m pip install .
+          npm install --prefix "$RUNNER_TEMP/folio-playwright" --no-save --package-lock=false playwright@1.58.2
+          "$RUNNER_TEMP/folio-playwright/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Chromium UI regression
+        env:
+          PLAYWRIGHT: ${{ runner.temp }}/folio-playwright/node_modules/playwright
+          BROWSER_ARTIFACTS: ${{ runner.temp }}/folio-browser-artifacts
+        run: node tests/test_browser.cjs
+      - name: Upload Chromium screenshots, traces, and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chromium-ui-regression
+          path: ${{ runner.temp }}/folio-browser-artifacts
+          if-no-files-found: warn
+          retention-days: 14
 
   start-sh:
     # macOS / Linux 的一键启动脚本
