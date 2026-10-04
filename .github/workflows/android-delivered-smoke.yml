@@ -1,0 +1,65 @@
+name: Test delivered Android APK
+
+# A fixed-artifact recovery test: never builds/re-signs/replaces the delivered APK.
+on:
+  pull_request:
+    paths: ['.github/workflows/android-delivered-smoke.yml']
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  delivered-apk-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-instrumentation-inputs
+          run-id: 37100128675
+          github-token: ${{ github.token }}
+          path: test-apks
+      - name: Verify the exact APK already delivered to the user
+        run: |
+          echo 'c1f09b33e020ed339c1bd55029319442d4ee41c3b44f82b7103739e5aeb5619b  test-apks/debug/app-debug.apk' | sha256sum --check --strict
+      - name: Inspect existing emulator acceleration
+        id: acceleration
+        run: |
+          if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+            echo 'mode=on' >> "$GITHUB_OUTPUT"
+          else
+            echo 'mode=off' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install unchanged APKs and run offline Android 15 smoke tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          emulator-boot-timeout: 900
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -accel ${{ steps.acceleration.outputs.mode }}
+          script: |
+            adb install test-apks/debug/app-debug.apk
+            adb install test-apks/androidTest/debug/app-debug-androidTest.apk
+            adb shell svc wifi disable
+            phone_status="$(adb shell service check phone | tr -d '\r')"; case "$phone_status" in *': found'*) adb shell svc data disable ;; *': not found'*) echo 'No phone service exists in this emulator; there is no cellular data service to disable.' ;; *) echo "Unexpected phone service status: $phone_status"; exit 1 ;; esac
+            for i in $(seq 1 30); do [ "$(adb shell settings get global wifi_on | tr -d '\r')" = '0' ] && break; sleep 2; done
+            test "$(adb shell settings get global wifi_on | tr -d '\r')" = '0'
+            for i in $(seq 1 30); do adb shell dumpsys connectivity > connectivity-before-test.txt; grep -q 'Active default network: none' connectivity-before-test.txt && break; sleep 2; done
+            grep -q 'Active default network: none' connectivity-before-test.txt
+            adb shell dumpsys webviewupdate > webview-version.txt
+            adb shell am instrument -w io.github.wangrunqiao0915.folioread.debug.test/androidx.test.runner.AndroidJUnitRunner | tee instrumentation-result.txt
+            adb logcat -d -s AndroidRuntime chromium > android-runtime-log.txt
+            grep -q 'OK (' instrumentation-result.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: delivered-apk-emulator-results
+          path: |
+            instrumentation-result.txt
+            connectivity-before-test.txt
+            webview-version.txt
+            android-runtime-log.txt

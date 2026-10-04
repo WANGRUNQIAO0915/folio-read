@@ -33,8 +33,9 @@
     source:(id,data)=>data===undefined ? transaction('sources','readonly',s=>s.get(id)) : serial(()=>transaction('sources','readwrite',s=>s.put({paper_id:id,...data}))),
     indexes:()=>transaction('indexes','readonly',s=>s.getAll()),
     saveIndex:data=>serial(()=>transaction('indexes','readwrite',s=>s.put(data))),
-    importBundle:data=>serial(async()=>{
+    importBundle:(data,options={})=>serial(async()=>{
       const old=await store.get(data.paper_id);
+      if(old && options.preserveExisting)return old;
       if(old){
         if(data.paper.meta.text_status==='original' && old.paper.meta.text_status!=='original') {data.paper=old.paper;data.images=old.images;data.discussion=old.discussion;}
         data.cloud_content_hash=old.cloud_content_hash;

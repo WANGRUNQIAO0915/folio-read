@@ -1,13 +1,13 @@
 /* PDF 在设备内解析。解析库按固定版本加载，文件内容不会发送给 CDN。 */
 (function (root) {
   'use strict';
-  const VERSION='6.3.289', BASE='https://cdn.jsdelivr.net/npm/pdfjs-dist@'+VERSION+'/';
+  const VERSION='6.3.289', BASE=root.FolioPlatform?.pdfBase || 'https://cdn.jsdelivr.net/npm/pdfjs-dist@'+VERSION+'/';
   const MAX_SOURCE=128*1024*1024;
   let loading;
   async function engine() {
     if(!loading) loading=import(BASE+'legacy/build/pdf.mjs').then(pdf=>{
       pdf.GlobalWorkerOptions.workerSrc=BASE+'legacy/build/pdf.worker.mjs';return pdf;
-    }).catch(()=>{loading=null;throw new Error('PDF 解析组件未能加载。首次导入需要联网，请检查网络后重试。');});
+    }).catch(()=>{loading=null;throw new Error(root.FolioPlatform?.bundledAssets ? '内置 PDF 组件未能加载。请更新 Android System WebView 后重试。' : 'PDF 解析组件未能加载。首次导入需要联网，请检查网络后重试。');});
     return loading;
   }
   async function sha(bytes) {

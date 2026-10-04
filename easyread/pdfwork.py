@@ -25,6 +25,15 @@ def _serial_pdf(fn):
 
 
 @_serial_pdf
+def page_count(pdf: Path) -> int:
+    """Count pages with the complete native PDFium lifecycle serialized."""
+    import pypdfium2 as pdfium
+
+    with pdfium.PdfDocument(str(pdf)) as doc:
+        return len(doc)
+
+
+@_serial_pdf
 def render_pages(pdf: Path, out_dir: Path, scale: float = 2.4, quality: int = 84) -> list[dict]:
     import pypdfium2 as pdfium
 
