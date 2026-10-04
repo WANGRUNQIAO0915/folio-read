@@ -52,6 +52,13 @@ jobs:
           ) | Set-Content -Encoding utf8 dist/BUILD-INFO.txt
           $hashes = Get-FileHash dist/FolioRead.exe,dist/FolioRead-Windows.zip -Algorithm SHA256
           $hashes | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content -Encoding ascii dist/SHA256SUMS.txt
+      - name: Prepare hosted runner display for wide-window checks
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          Write-Output "Initial display: $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)"
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Write-Output "Test display: $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)"
       - name: Test packaged EXE in isolated data directory
         id: smoke
         shell: pwsh
