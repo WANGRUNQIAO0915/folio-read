@@ -37,6 +37,8 @@
       <span class="count" id="count"></span>
 
       <span class="grow"></span>
+      <button class="btn sm line" id="batchSelect">选择论文</button>
+      <button class="btn sm accent" id="organizeBtn" hidden>整理分类</button>
       <label class="sort">排序
         <select id="sort" class="input">
           <option value="opened">最近打开</option>
@@ -56,6 +58,7 @@
 
 <div class="dialog-backdrop" id="importDlg"><div class="dialog" role="dialog" aria-label="导入论文"></div></div>
 <div class="dialog-backdrop" id="settingsDlg"><div class="dialog wide" role="dialog" aria-label="设置"></div></div>
+<div class="dialog-backdrop" id="organizationDlg"><div class="dialog wide" role="dialog" aria-label="整理文献分类"></div></div>
 <div class="dialog-backdrop" id="textDlg"><div class="dialog wide" role="dialog"></div></div>
 <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
 <div id="toast" role="status"></div>
@@ -69,6 +72,7 @@
 <script src="/web/js/library/app.js"></script>
 <script src="/web/js/library/sidebar.js"></script>
 <script src="/web/js/library/detail.js"></script>
+<script src="/web/js/library/organization.js"></script>
 <script src="/web/js/library/import.js"></script>
 <script src="/web/js/common/settings-models.js"></script>
 <script src="/web/js/common/settings.js"></script>

@@ -67,7 +67,11 @@ def build(ws: Workspace, out: Path | None = None, assets: Path | None = None, ex
         else:
             images[rel] = _data_uri(src, "image/webp")
     data = {n: ws.load(n) for n in ("discussion", "reader", "layout", "item", "chat")}
-    data.update({"paper": paper, "images": images}, **(extra or {}))
+    from .library import Library
+    from .organization import Organization, assignment, paper_id, export_subset
+    organization = export_subset(Organization(Library(ws.root.parent), [ws]).load(), [paper_id(ws)])
+    data["item"]["tags"] = assignment(organization, paper_id(ws))["tags"]
+    data.update({"paper": paper, "paper_id": paper_id(ws), "images": images, "organization": organization}, **(extra or {}))
     payload = json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")
     page = page.replace("<!--PR:DATA-->", f'<script id="pr-data" type="application/json">{payload}</script>')
     title = paper.get("meta", {}).get("title_zh") or paper.get("meta", {}).get("title_en") or "论文"

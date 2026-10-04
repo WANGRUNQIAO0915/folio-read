@@ -41,6 +41,9 @@ jobs:
           node tests/test_mobile_folder_import.cjs
           node tests/test_mobile_knowledge.cjs
           node tests/test_android_drive.cjs
+          node tests/test_mobile_organization.cjs
+          node tests/test_mobile_organization_drive.cjs
+          node tests/test_mobile_organization_ui.cjs
       - name: Build, lint, and package instrumentation tests
         working-directory: android
         run: ./gradlew --no-daemon lintDebug assembleDebug assembleDebugAndroidTest -PenableGoogleDrive=${{ (github.event_name != 'workflow_dispatch' || inputs.enable_google_drive) && 'true' || 'false' }}

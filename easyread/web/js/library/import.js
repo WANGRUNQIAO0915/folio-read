@@ -3,6 +3,7 @@
   "use strict";
   const L = PR.lib;
   const dlg = PR.$("#importDlg");
+  let importingFiles = false, importingRef = false;
   const SCOPES = [["all", "全文"], ["body", "正文（到参考文献为止）"], ["first", "前几页"]];
 
   const pref = () => Object.assign({ auto: true, scope: "all", first: 10 }, PR.ls.get("easyread-import", {}));
@@ -14,6 +15,7 @@
     dlg.querySelector(".dialog").innerHTML =
       "<h2>导入论文</h2>" +
       '<div class="dropzone" id="pick">' + PR.icon("upload") + '<div class="big">选择 PDF，或拖到这里</div><div class="hint">可以一次选多个；同一个文件不会重复导入</div></div>' +
+      '<label class="field"><span>保存到软件文件夹</span><select class="input" id="importFolder">' + L.folderOptions(L.folder || null) + '</select><small class="hint">原 PDF 不移动；已有论文不会重复导入或改动原分类。</small></label>' +
       '<div class="or">或者</div>' +
       '<label class="field"><span>链接、arXiv 编号、DOI 或论文标题</span><div class="inline"><input class="input" id="arxivRef" placeholder="2411.00640 · 10.18653/v1/N19-1423 · 论文网页链接 · 论文标题">' +
       '<button class="btn accent" id="arxivGo">导入</button></div></label>' +
@@ -31,7 +33,8 @@
     const c = PR.$("#autoTr");
     const auto = c ? c.checked : p.auto && L.engine !== "none";
     const scope = p.scope === "first" ? "first:" + Math.max(1, +p.first || 10) : p.scope;
-    return { translate: auto, scope };
+    const folder_id = dlg.classList.contains("open") ? (PR.$("#importFolder")?.value || null) : L.folder || null;
+    return { translate: auto, scope, folder_id };
   }
 
   dlg.addEventListener("click", (e) => {
@@ -55,32 +58,37 @@
   PR.$("#fileInput").addEventListener("change", (e) => { importFiles(Array.from(e.target.files)); e.target.value = ""; });
 
   async function importFiles(files) {
+    if (importingFiles) return PR.toast("正在导入，请稍候");
     const pdfs = files.filter((f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf");
     if (!pdfs.length) return PR.toast("只支持 PDF 文件");
-    close();
     const o = opts();
-    let last = null;
+    close();
+    importingFiles = true;
+    let last = null, added = 0, existing = 0, failed = 0;
     for (const [k, f] of pdfs.entries()) {
       PR.toast("正在导入 " + (k + 1) + "/" + pdfs.length + "：" + PR.esc(f.name), null, 60000);
       try {
-        const r = await PR.api("/api/import?translate=" + (o.translate ? 1 : 0) + "&scope=" + encodeURIComponent(o.scope) + "&name=" + encodeURIComponent(f.name), { method: "POST", body: f });
+        const r = await PR.api("/api/import?translate=" + (o.translate ? 1 : 0) + "&scope=" + encodeURIComponent(o.scope) + "&name=" + encodeURIComponent(f.name) + "&folder_id=" + encodeURIComponent(o.folder_id || ""), { method: "POST", body: f });
         last = r.id;
+        if (r.new) added++; else existing++;
         if (!r.new) PR.toast("《" + PR.esc(f.name) + "》已经在库里了");
-      } catch (e) { PR.toast("导入失败：" + PR.esc(e.message)); }
+      } catch (e) { failed++; PR.toast("导入失败：" + PR.esc(e.message)); }
     }
+    importingFiles = false;
     await L.load();
-    if (last) { L.select(last); PR.toast("已导入 " + pdfs.length + " 篇" + (o.translate ? "，后台开始翻译" : ""), { label: "打开", fn: () => L.openReader(last) }, 6000); }
+    if (last) { L.select(last); PR.toast([added ? "已导入 " + added + " 篇" + (o.translate ? "，后台开始翻译" : "") : "", existing ? existing + " 篇已在库中，分类保持不变" : "", failed ? failed + " 篇导入失败" : ""].filter(Boolean).join("；"), { label: "打开", fn: () => L.openReader(last) }, 6000); }
   }
 
   async function importRef(ref) {
     ref = (ref || "").trim();
-    if (!ref) return;
+    if (!ref || importingRef) return;
+    importingRef = true;
     const btn = PR.$("#arxivGo");
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 查找中'; }
     else PR.toast('<span class="spin"></span> 正在查找并下载 ' + PR.esc(ref), null, 60000);
     const o = opts();
     try {
-      const r = await PR.api("/api/import-url", { method: "POST", body: { ref, translate: o.translate, scope: o.scope } });
+      const r = await PR.api("/api/import-url", { method: "POST", body: { ref, translate: o.translate, scope: o.scope, folder_id: o.folder_id } });
       close();
       await L.load();
       L.select(r.id);
@@ -88,7 +96,7 @@
     } catch (e) {
       PR.toast("导入失败：" + PR.esc(e.message), null, 8000);
       if (btn) { btn.disabled = false; btn.textContent = "导入"; }
-    }
+    } finally { importingRef = false; }
   }
   PR.importRef = importRef;
 

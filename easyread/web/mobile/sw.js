@@ -2,7 +2,7 @@
 // The static build replaces this revision with a fingerprint of its public assets.
 const CACHE='folio-mobile-dev-v2';
 const FILES=['./','./index.html','./mobile.css','./core.js','./storage.js','./drive.js','./pdf-import.js','./knowledge.js','./ai.js','./app.js','./manifest.webmanifest','./icon-192.png','./icon-512.png','./config.json',
-  '../favicon.svg','../css/base.css','../js/common/markup.js','../js/common/journal-rank.js','../js/common/citations.js','../js/reader/outline.js','../vendor/katex/katex.min.css','../vendor/katex/katex.min.js',
+  '../favicon.svg','../css/base.css','../js/common/markup.js','../js/common/journal-rank.js','../js/common/organization.js','../js/common/citations.js','../js/reader/outline.js','../vendor/katex/katex.min.css','../vendor/katex/katex.min.js',
   ...['KaTeX_AMS-Regular','KaTeX_Caligraphic-Bold','KaTeX_Caligraphic-Regular','KaTeX_Fraktur-Bold','KaTeX_Fraktur-Regular','KaTeX_Main-Bold','KaTeX_Main-BoldItalic','KaTeX_Main-Italic','KaTeX_Main-Regular','KaTeX_Math-BoldItalic','KaTeX_Math-Italic','KaTeX_SansSerif-Bold','KaTeX_SansSerif-Italic','KaTeX_SansSerif-Regular','KaTeX_Script-Regular','KaTeX_Size1-Regular','KaTeX_Size2-Regular','KaTeX_Size3-Regular','KaTeX_Size4-Regular','KaTeX_Typewriter-Regular'].map(n=>'../vendor/katex/fonts/'+n+'.woff2')];
 const URLS=FILES.map(file=>new URL(file,self.location.href).href);
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(URLS)));});

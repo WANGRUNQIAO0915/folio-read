@@ -4,11 +4,15 @@ from __future__ import annotations
 from .store import Workspace
 
 
-def _entries(ws: Workspace, paper: dict):
+def _entries(ws: Workspace, paper: dict, organization=None):
     meta = paper.get("meta", {})
+    from .library import Library
+    from .organization import Organization, assignment, paper_id
     item = ws.load("item") or {}
+    organization = Organization(Library(ws.root.parent), [ws]).load() if organization is None else organization
+    effective = assignment(organization, paper_id(ws), item.get("tags"))
     meta = {**meta, **{k: v for k, v in (item.get("meta_override") or {}).items() if v}}
-    yield "题录", "", " ".join(str(meta.get(k) or "") for k in ("title_en", "title_zh", "authors", "venue", "doi", "year", "abstract_en")) + " " + " ".join(item.get("tags") or [])
+    yield "题录", "", " ".join(str(meta.get(k) or "") for k in ("title_en", "title_zh", "authors", "venue", "doi", "year", "abstract_en")) + " " + " ".join(effective["tags"])
     blocks = {b.get("id"): b for b in paper.get("blocks", [])}
     for bid, block in blocks.items():
         parts = [str(block.get(k) or "") for k in ("en", "zh", "caption_en", "caption_zh", "tex")]
@@ -38,6 +42,8 @@ def find(lib, query: str, limit: int = 200) -> dict:
     words = query.casefold().split()
     if not words:
         return {"matches": [], "errors": [], "truncated": False}
+    from .organization import Organization
+    organization = Organization(lib).load()
     matches, errors = [], []
     truncated = False
     for ws in lib.all():
@@ -45,7 +51,7 @@ def find(lib, query: str, limit: int = 200) -> dict:
             paper = ws.load("paper") or {}
             hits = []
             # Every search word must occur in the same passage, so the snippet is evidence.
-            for kind, anchor, text in _entries(ws, paper):
+            for kind, anchor, text in _entries(ws, paper, organization):
                 lower = text.casefold()
                 if all(word in lower for word in words):
                     at = lower.find(words[0])

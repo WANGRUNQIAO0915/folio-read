@@ -1,6 +1,7 @@
 /* Portable reading data. Only document data is included in cloud packages. */
 (function (root) {
   'use strict';
+  const O=root.FolioOrganization || (typeof require==='function'?require('../js/common/organization.js'):null);
   const MAX_BYTES = 64 * 1024 * 1024;
   const copy = value => JSON.parse(JSON.stringify(value));
   const safeKey = key => typeof key === 'string' && key.length > 0 && key.length < 200 && !['__proto__','prototype','constructor'].includes(key);
@@ -70,9 +71,10 @@
       paper.translation.done_pages=[...new Set((input.paper.translation.done_pages || []).filter(p=>Number.isInteger(p)&&p>0&&p<=10000))].sort((a,b)=>a-b);
     }
     const item=pick(input.item,'item');if(item.meta_override) item.meta_override=pick(item.meta_override,'meta');
+    if(input.organization&&O){const org=O.normalize(input.organization);if(org.assignments[id])item.tags=O.assignment(org,id).tags;}
     return {schema:1,kind:'folio-mobile-paper',paper_id:id,paper,reader:cleanReader(input.reader || {}),
       discussion:{entries:(input.discussion?.entries || []).map(e=>pick(e,'entry'))},item,images,
-      imported_at:input.imported_at || new Date().toISOString()};
+      imported_at:input.imported_at || new Date().toISOString(),...(input.organization&&O?{organization:O.exportSubset(input.organization,[id])}:{})};
   }
   function parseImport(text) {
     if (new TextEncoder().encode(text).length > MAX_BYTES) throw new Error('这篇离线论文超过 64 MB，请先导出较小的阅读文件。');

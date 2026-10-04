@@ -34,6 +34,8 @@ def _safe(base: Path, rel: str) -> Path | None:
 class App:
     def __init__(self, cfg: dict):
         self.lib = Library(config.library_dir(cfg))
+        from .classification import Classification
+        self.classification = Classification(self.lib)
         self.jobs = Jobs(self.lib)
         self.study = study.Tasks(self.lib)
         self.token = os.urandom(12).hex()
@@ -181,10 +183,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(WEB / "study.html")
         if path.startswith("/web/"):
             return self._file(_safe(WEB, path[5:]), cache=path.startswith("/web/vendor/"))
+        if path == "/api/organization":
+            from .organization import Organization
+            return self._json(200, Organization(lib).load())
         if path == "/api/library":
+            from .organization import Organization
             cfg = config.load()
             app.scholar.refresh(automatic=True)
-            return self._json(200, {"items": lib.list(), "token": app.token, "jobs": app.jobs.small_status(),
+            return self._json(200, {"items": lib.list(), "organization": Organization(lib).load(), "token": app.token, "jobs": app.jobs.small_status(),
                                     "engine": cfg.get("engine"), "engine_label": _engine_label(cfg),
                                     "first_run": config.is_first_run(), "version": __version__})
         if path == "/api/config":
@@ -294,6 +300,26 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         app, lib = self.app, self.app.lib
 
+        if path.startswith('/api/organization/') or path.startswith('/api/classification/'):
+            body = json.loads(self._body() or b'{}')
+            if not isinstance(body, dict):
+                raise ValueError('请求必须是对象')
+            from .organization import Organization
+            organization = Organization(lib)
+            if path == '/api/organization/folder':
+                return self._json(200, organization.folder(body.get('name'), body.get('id')))
+            if path == '/api/organization/folder-delete':
+                return self._json(200, organization.delete_folder(body.get('id')))
+            if path == '/api/organization/assign':
+                return self._json(200, organization.assign(body.get('assignments')))
+            if path == '/api/classification/preview':
+                return self._json(200, app.classification.preview(body, config.load()))
+            if path == '/api/classification/send':
+                return self._json(200, app.classification.send(body.get('id'), body.get('confirmed'), config.load()))
+            if path == '/api/classification/cancel':
+                return self._json(200, app.classification.cancel(body.get('id')))
+            raise ValueError('未知分类操作')
+
         if path.startswith('/api/easyscholar/'):
             body = json.loads(self._body() or b'{}')
             if not isinstance(body, dict):
@@ -339,16 +365,30 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, app.drive.status())
 
         if path == "/api/import":  # 请求体就是 PDF 文件
+            from .organization import Organization
+            organization = Organization(lib)
+            try:
+                fid = organization.validate_folder(q.get("folder_id"))
+            except ValueError:
+                self.close_connection = True  # The rejected PDF body is intentionally unread.
+                raise
             data = self._body()
             ws, fresh = lib.create_from_pdf(data, q.get("name", "paper.pdf"))
             if fresh:
+                if fid:
+                    organization.assign([{"paper_id": ws.id, "folder_id": fid}])
                 app.jobs.enqueue(ws, translate_after=q.get("translate", "1") == "1", scope=q.get("scope"))
             return self._json(200, {"id": ws.id, "new": fresh})
         if path in ("/api/import-url", "/api/import-arxiv"):
             body = json.loads(self._body() or b"{}")
+            from .organization import Organization
+            organization = Organization(lib)
+            fid = organization.validate_folder(body.get("folder_id"))
             data, name, meta = lib.fetch(body.get("ref", ""))  # sources.SourceError 是 ValueError，回 400
             ws, fresh = lib.create_from_pdf(data, name, meta)
             if fresh:
+                if fid:
+                    organization.assign([{"paper_id": ws.id, "folder_id": fid}])
                 app.jobs.enqueue(ws, translate_after=bool(body.get("translate", True)), scope=body.get("scope"))
             return self._json(200, {"id": ws.id, "new": fresh})
         if path == "/api/config":
