@@ -1,6 +1,6 @@
 [project]
 name = "folio-read"
-version = "1.1.0.dev5"
+version = "1.1.0.dev6"
 description = "Folio Read：把英文论文读成舒服的中文——后台翻译、对照原文、批注笔记、文献库"
 readme = "README.md"
 license = { text = "MIT" }

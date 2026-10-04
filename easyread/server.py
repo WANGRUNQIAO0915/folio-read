@@ -249,6 +249,9 @@ class Handler(BaseHTTPRequestHandler):
             if not ws:
                 return self._json(404, {"error": "没有这篇论文"})
             action = parts[4]
+            if action == 'citation':
+                from .bibliography import citation
+                return self._json(200, citation(ws))
             if action == "pdf":
                 from .naming import library_filenames
                 source = _safe(ws.root, "source.pdf")
@@ -342,7 +345,8 @@ class Handler(BaseHTTPRequestHandler):
             from .organization import Organization
             organization = Organization(lib)
             if path == '/api/organization/folder':
-                return self._json(200, organization.folder(body.get('name'), body.get('id')))
+                options = {'parent_id': body['parent_id']} if 'parent_id' in body else {}
+                return self._json(200, organization.folder(body.get('name'), body.get('id'), **options))
             if path == '/api/organization/folder-delete':
                 return self._json(200, organization.delete_folder(body.get('id')))
             if path == '/api/organization/assign':

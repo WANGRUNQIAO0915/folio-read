@@ -62,6 +62,34 @@ class OrganizationTest(unittest.TestCase):
         self.org.delete_folder(fid)  # Idempotent deletion does not create new version.
         self.assertEqual(original, {p.name: p.read_bytes() for p in self.ws.root.iterdir()})
 
+    def test_nested_paths_reuse_ancestors_export_and_safe_deletion(self):
+        rows = [{'paper_id': self.ws.id, 'folder_path': ['研究主题', '绿洲', '水资源'], 'tags': ['干旱']}]
+        state = self.org.assign(rows)
+        leaf = O.assignment(state, 'a'*64)['folder_id']
+        self.assertEqual(O.folder_path(state, leaf), '研究主题 / 绿洲 / 水资源')
+        self.assertEqual(len(self.org.assign(rows)['folders']), 3)
+        exported = O.export_subset(state, ['a'*64])
+        self.assertEqual(len(exported['folders']), 3)
+        ancestor = O.parent(state, leaf)
+        with self.assertRaisesRegex(ValueError, '自身或子文件夹'):
+            self.org.folder('绿洲', ancestor, leaf)
+        self.org.delete_folder(ancestor)
+        self.assertIsNone(O.parent(self.org.load(), leaf))
+        self.assertEqual(O.assignment(self.org.load(), 'a'*64)['folder_id'], leaf)
+        self.assertEqual(O.folder_path(self.org.load(), leaf), '水资源')
+        before = self.org.load()
+        with self.assertRaises(ValueError):
+            self.org.assign([{'paper_id': self.ws.id, 'folder_path': []}])
+        self.assertEqual(self.org.load(), before)
+
+    def test_concurrent_cycle_has_stable_tree_without_changing_registers(self):
+        state = O.empty()
+        for fid, parent in [('a','b'), ('b','c'), ('c','a'), ('d','b')]:
+            state['folders'][fid] = {'id': fid, 'name': fid, 'parent_id': parent, 'deleted': False, 'version': v()}
+        self.assertIsNone(O.parent(state, 'a'))
+        self.assertEqual(O.folder_path(state, 'd'), 'a / c / b / d')
+        self.assertEqual(state['folders']['a']['parent_id'], 'b')
+
     def test_assignment_validation_is_atomic_and_stale_guarded(self):
         initial = self.org.load()
         with self.assertRaises(ValueError):

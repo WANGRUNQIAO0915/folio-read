@@ -18,6 +18,28 @@ MAX_NAME = 80
 MAX_TAGS = 12
 MAX_TAG = 40
 MAX_BATCH = 500
+_UNSET = object()
+
+
+def parent(state, fid):
+    """A deterministic display tree, including concurrent moves and orphaned children."""
+    live = {k: v for k, v in state['folders'].items() if not v['deleted']}
+    edges = {k: v.get('parent_id') if v.get('parent_id') in live and v.get('parent_id') != k else None for k, v in live.items()}
+    seen, order = set(), []
+    cursor = fid
+    while cursor in edges and cursor not in seen:
+        seen.add(cursor); order.append(cursor); cursor = edges[cursor]
+    if cursor in seen:
+        cycle = order[order.index(cursor):]
+        edges[min(cycle, key=lambda s: s.encode('utf-16-be'))] = None
+    return edges.get(fid)
+
+
+def folder_path(state, fid):
+    labels, seen = [], set()
+    while fid and fid in state['folders'] and fid not in seen:
+        seen.add(fid); labels.append(state['folders'][fid]['name']); fid = parent(state, fid)
+    return ' / '.join(reversed(labels))
 
 
 def _length(value):
@@ -81,7 +103,7 @@ def normalize(value=None):
             label = name(record.get('name'))
         except ValueError:
             continue
-        out['folders'][fid] = {'id': fid, 'name': label, 'version': clean_version(record.get('version')), 'deleted': record.get('deleted') is True}
+        out['folders'][fid] = {'id': fid, 'name': label, 'parent_id': record.get('parent_id') if safe_key(record.get('parent_id')) else None, 'version': clean_version(record.get('version')), 'deleted': record.get('deleted') is True}
     for pid, record in (value.get('assignments') if isinstance(value.get('assignments'), dict) else {}).items():
         if not safe_key(pid) or not isinstance(record, dict):
             continue
@@ -130,6 +152,12 @@ def subset(state, pids):
 def export_subset(state, pids):
     state = subset(state, pids)
     referenced = {a['folder_id'] for a in state['assignments'].values()}
+    for fid in list(referenced):
+        seen = set()
+        while fid and fid not in seen:
+            seen.add(fid); fid = parent(state, fid)
+            if fid:
+                referenced.add(fid)
     state['folders'] = {fid: folder for fid, folder in state['folders'].items() if fid in referenced}
     return state
 
@@ -190,17 +218,23 @@ class Organization:
             raise ValueError('文件夹不存在或已删除')
         return fid
 
-    def folder(self, label, fid=None):
+    def folder(self, label, fid=None, parent_id=_UNSET):
         label = name(label)
         with dir_lock(self.lib.root, '.organization.lock'):
             state = self.load()
             if fid is not None:
                 self.validate_folder(fid, state)
-            match = next((f for f in state['folders'].values() if not f['deleted'] and f['name'].lower() == label.lower() and f['id'] != fid), None)
+            chosen_parent = (state['folders'][fid].get('parent_id') if fid else None) if parent_id is _UNSET else self.validate_folder(parent_id, state)
+            cursor, seen = chosen_parent, set()
+            while cursor:
+                if cursor == fid or cursor in seen:
+                    raise ValueError('不能把文件夹移入自身或子文件夹')
+                seen.add(cursor); cursor = parent(state, cursor)
+            match = next((f for f in state['folders'].values() if not f['deleted'] and f['name'].lower() == label.lower() and parent(state, f['id']) == chosen_parent and f['id'] != fid), None)
             if match:
                 raise ValueError('已有同名文件夹')
             fid = fid or str(uuid.uuid4())
-            state['folders'][fid] = {'id': fid, 'name': label, 'version': version(state), 'deleted': False}
+            state['folders'][fid] = {'id': fid, 'name': label, 'parent_id': chosen_parent, 'version': version(state), 'deleted': False}
             write_json_atomic(self.path, state)
             return state
 
@@ -235,16 +269,30 @@ class Organization:
                     raise ValueError('分类已在另一处更新，请刷新后重试')
                 chosen_tags = tags(row['tags'], generous=True) if 'tags' in row else prior['tags']
                 fid = row.get('folder_id', prior['folder_id'])
+                if 'folder_path' in row:
+                    labels = row['folder_path']
+                    if not isinstance(labels, list) or not 1 <= len(labels) <= 12 or row.get('folder_id') or row.get('folder_name'):
+                        raise ValueError('文件夹路径无效，最多支持 12 层目录')
+                    fid = None
+                    for part in labels:
+                        label = name(part)
+                        found = next((f for f in state['folders'].values() if not f['deleted'] and f['name'].lower() == label.lower() and parent(state, f['id']) == fid), None)
+                        if found:
+                            fid = found['id']
+                        else:
+                            new_id = str(uuid.uuid4())
+                            state['folders'][new_id] = {'id': new_id, 'name': label, 'parent_id': fid, 'version': version(state), 'deleted': False}
+                            fid = new_id
                 if row.get('folder_name'):
                     if row.get('folder_id'):
                         raise ValueError('不能同时指定已有和新建文件夹')
                     label = name(row['folder_name'])
-                    found = next((f for f in state['folders'].values() if not f['deleted'] and f['name'].lower() == label.lower()), None)
+                    found = next((f for f in state['folders'].values() if not f['deleted'] and f['name'].lower() == label.lower() and parent(state, f['id']) is None), None)
                     if found:
                         fid = found['id']
                     else:
                         fid = str(uuid.uuid4())
-                        state['folders'][fid] = {'id': fid, 'name': label, 'version': version(state), 'deleted': False}
+                        state['folders'][fid] = {'id': fid, 'name': label, 'parent_id': None, 'version': version(state), 'deleted': False}
                 fid = self.validate_folder(fid, state)
                 state['assignments'][pid] = {'folder_id': fid, 'tags': chosen_tags, 'version': version(state)}
             write_json_atomic(self.path, state)

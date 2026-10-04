@@ -2,7 +2,7 @@ name: Mobile reader
 on:
   push:
     branches: [main]
-    paths: ['easyread/web/mobile/**', 'easyread/web/css/base.css', 'easyread/web/js/common/markup.js', 'easyread/web/vendor/katex/**', 'scripts/build_mobile_site.py', '.github/workflows/mobile-pages.yml']
+    paths: ['easyread/web/mobile/**', 'easyread/web/css/base.css', 'easyread/web/js/common/markup.js', 'easyread/web/js/common/organization.js', 'easyread/web/js/common/classification-editor.js', 'easyread/web/vendor/katex/**', 'scripts/build_mobile_site.py', '.github/workflows/mobile-pages.yml']
   workflow_dispatch:
 permissions:
   contents: read

@@ -104,8 +104,8 @@
       '</span><span class="n">' + count(fn) + "</span>" + (k === "all" && !pinnedRow ? "" : more) + "</div>";
   }
   function catRow(c, pinnedRow) {
-    if (ui.renaming === c && !pinnedRow) return '<div class="srow editing">' + PR.icon("folder", "sm") + '<input class="side-input" data-rename="' + PR.esc(c) + '" value="' + PR.esc(c) + '" maxlength="30"></div>';
-    return '<div class="srow' + (L.tag === c ? " on" : "") + '" data-cat="' + PR.esc(c) + '"' + (pinnedRow ? " data-pinrow" : "") + ">" + PR.icon("folder", "sm") +
+    if (ui.renaming === c && !pinnedRow) return '<div class="srow editing">' + '<span class="tag-symbol" aria-hidden="true">#</span>'  + '<input class="side-input" data-rename="' + PR.esc(c) + '" value="' + PR.esc(c) + '" maxlength="30"></div>';
+    return '<div class="srow' + (L.tag === c ? " on" : "") + '" data-cat="' + PR.esc(c) + '"' + (pinnedRow ? " data-pinrow" : "") + ">" + '<span class="tag-symbol" aria-hidden="true">#</span>'  +
       '<span class="t">' + PR.esc(c) + '</span><span class="n">' + count((i) => (i.tags || []).includes(c)) + "</span>" + more + "</div>";
   }
   /* 侧栏放短标题：优先用翻译时起的短标题，其次取中文标题冒号前那半句 */
@@ -128,19 +128,21 @@
       return view ? viewRow(view, true) : "";
     }).join("");
     let h = pinned ? '<h3>置顶</h3><div class="sgroup">' + pinned + "</div>" : "";
-    h += '<h3>标签<button class="h-add" data-add title="新建标签">' + PR.icon("plus", "sm") + "</button></h3><div class=\"sgroup\" data-drop-zone>" +
+    h += '<h3>资料库</h3><div class="sgroup" data-drop-zone>' +
       BUILTIN.filter(([k]) => k === "all" || (!L.side.hidden.includes(k) && !isPinned("v:" + k))).map((v) => viewRow(v)).join("") +
-      AUTO.filter(([k, , , fn]) => count(fn) && !L.side.hidden.includes(k)).map((v) => viewRow(v)).join("") +
+      AUTO.filter(([k, , , fn]) => count(fn) && !L.side.hidden.includes(k)).map((v) => viewRow(v)).join("") + '</div>' + (L.folderSidebar ? L.folderSidebar() : '') +
+      '<details class="side-tags"'+(ui.adding||ui.renaming||L.tag||PR.ls.get('folio-tags-open',false)?' open':'')+'><summary>标签 <span>'+cats.length+'</span></summary><div class="sgroup" data-drop-zone>' +
       cats.filter((c) => !isPinned("c:" + c) && !L.side.hidden.includes("c:" + c)).map((c) => catRow(c)).join("") +
-      (ui.adding ? '<div class="srow editing">' + PR.icon("folder", "sm") + '<input class="side-input" data-new placeholder="标签名，回车" maxlength="30"></div>' : "") +
-      (!ui.adding ? '<button class="srow hint-row" data-add>' + PR.icon("plus", "sm") + '<span class="t">' + (cats.length ? "新建标签" : "新建标签，把论文拖进来") + "</span></button>" : "") + "</div>";
+      (ui.adding ? '<div class="srow editing">' + '<span class="tag-symbol" aria-hidden="true">#</span>'  + '<input class="side-input" data-new placeholder="标签名，回车" maxlength="30"></div>' : "") +
+      (!ui.adding ? '<button class="srow hint-row" data-add>' + PR.icon("plus", "sm") + '<span class="t">' + (cats.length ? "新建标签" : "新建标签，把论文拖进来") + "</span></button>" : "") + "</div></details>";
     const recent = L.items.filter((i) => i.last_opened && !isPinned("p:" + i.id)).sort((a, b) => String(b.last_opened).localeCompare(String(a.last_opened)));
     if (recent.length) {
       const shown = recent.slice(0, ui.recentOpen ? RECENT_MAX : RECENT_SHORT);
       h += '<h3>最近阅读</h3><div class="sgroup">' + shown.map((i) => paperRow(i)).join("") +
         (recent.length > RECENT_SHORT ? '<button class="srow toggle-more" data-recent>' + (ui.recentOpen ? "收起" : "展开更多（" + (Math.min(recent.length, RECENT_MAX) - RECENT_SHORT) + "）") + "</button>" : "") + "</div>";
     }
-    box.innerHTML = (L.folderSidebar ? L.folderSidebar() : "") + h;
+    box.innerHTML = h;
+    const tagGroup=box.querySelector('.side-tags');if(tagGroup)tagGroup.addEventListener('toggle',()=>PR.ls.set('folio-tags-open',tagGroup.open));
     const inp = PR.$(".side-input", box);
     if (inp) { inp.focus(); inp.select(); }
   };
@@ -156,6 +158,12 @@
     if (row.dataset.cat) {
       const c = row.dataset.cat, key = "c:" + c, i = L.cats().indexOf(c);
       return PR.menu(where, [
+        { label: '按此标签归入文件夹…', icon: 'folder', fn: async () => {
+          const papers=L.items.filter(i=>(i.tags||[]).includes(c));
+          if(!papers.length)return PR.toast('此标签下还没有论文');
+          const path=await PR.promptText({title:'将“'+c+'”下的论文归入文件夹',value:c,placeholder:'研究主题 / 绿洲',max:1000});if(!path)return;
+          try{await PR.api('/api/organization/assign',{method:'POST',body:{assignments:papers.map(i=>({paper_id:i.id,folder_id:null,folder_path:path.split('/').map(s=>s.trim()),expected_version:i.organization_version}))}});await L.load();PR.toast('已归入目录，原标签保留');}catch(e){PR.toast(PR.esc(e.message));}
+        } },
         { label: isPinned(key) ? "取消置顶" : "置顶", icon: "pin", fn: () => L.togglePin(key) },
         { label: "改名", icon: "edit", fn: () => { ui.renaming = c; L.render(); } },
         { label: "上移", disabled: i <= 0, fn: () => L.moveCat(c, -1) },

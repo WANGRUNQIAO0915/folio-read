@@ -1,6 +1,25 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),crypto=require('node:crypto');
 const O=require('../easyread/web/js/common/organization.js'),C=require('../easyread/web/mobile/core.js');
+const CE=require('../easyread/web/js/common/classification-editor.js');
+{
+ let tree=O.assign(O.empty(),[{paper_id:'nested',folder_path:['研究主题','绿洲','水资源'],tags:['干旱']}]);
+ const leaf=tree.assignments.nested.folder_id;
+ assert.equal(O.path(tree,leaf),'研究主题 / 绿洲 / 水资源');assert.equal(O.tree(tree).length,3);assert.equal(O.tree(tree)[2].depth,2);
+ assert.equal(O.live(O.assign(tree,[{paper_id:'nested',folder_path:['研究主题','绿洲','水资源']}])).length,3);
+ assert.equal(Object.keys(O.exportSubset(tree,['nested']).folders).length,3);
+ assert(O.within(tree,leaf,O.tree(tree)[0].id));assert.throws(()=>O.moveFolder(tree,O.tree(tree)[0].id,leaf),/子文件夹/);
+ assert.throws(()=>O.assign(tree,[{paper_id:'nested',folder_path:[]}]),/路径/);
+ const draft=CE.draft({paper_id:'nested',folder_id:leaf,tags:['legacy, compound']});
+ assert.deepEqual(CE.resolve(draft,{...O,state:tree}).tags,['legacy, compound']);
+ draft.folderText='研究主题 / 绿洲 / 新方法';draft.tagsText='人工标签';draft.suggestion={folder_id:leaf,tags:['AI 标签']};
+ assert.equal(CE.field(draft,'tags',{...O,state:tree}).placeholder,'AI 标签');assert.deepEqual(CE.resolve(draft,{...O,state:tree}).tags,['人工标签']);
+ assert.deepEqual(CE.resolve(draft,{...O,state:tree}).folder_path,['研究主题','绿洲','新方法']);
+ draft.tagsText='';assert.deepEqual(CE.resolve(draft,{...O,state:tree}).tags,['AI 标签']);
+ draft.clearTags=true;draft.clearFolder=true;assert.deepEqual(CE.resolve(draft,{...O,state:tree}).tags,[]);assert.equal(CE.resolve(draft,{...O,state:tree}).folder_id,null);
+ const cycle=O.empty();for(const [id,parent_id] of [['a','b'],['b','c'],['c','a'],['d','b']])cycle.folders[id]={id,name:id,parent_id,version:{at:'',id:''},deleted:false};
+ assert.equal(O.path(cycle,'d'),'a / c / b / d');assert.equal(O.tree(cycle).length,4);assert.equal(cycle.folders.a.parent_id,'b');
+}
 const v=(at,id)=>({at,id});
 let base=O.createFolder(O.empty(),'森林',v('2026-01-01T00:00:00.000Z','a'));const folder=O.live(base)[0].id;
 base=O.assign(base,[{paper_id:'paper',folder_id:folder,tags:['Satellite','satellite','森林']}],v('2026-01-02T00:00:00.000Z','b'));

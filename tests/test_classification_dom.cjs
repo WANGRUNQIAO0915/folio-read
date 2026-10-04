@@ -15,40 +15,39 @@ w.fetch=async(url,options={})=>{
  else if(route==='/api/engines')data={ready:true,found:{}};
  else if(route==='/api/prefs')data={library:{cats:[],hidden:[],pinned:[]}};
  else if(route==='/api/import'){lastImport=String(url);data={id:'p001',new:false};}
- else if(route==='/api/organization/assign'){saves++;for(const a of body.assignments){if('expected_version' in a)assert.deepEqual(a.expected_version,org.assignments[a.paper_id].version);org.assignments[a.paper_id]={folder_id:a.folder_name?'f2':a.folder_id,tags:a.tags || org.assignments[a.paper_id].tags,version:{at:'2026-01-01T00:00:00Z',id:String(saves)}};if(a.folder_name)org.folders.f2={id:'f2',name:a.folder_name,deleted:false,version:{at:'',id:''}};}data=org;}
+ else if(route==='/api/organization/assign'){saves++;for(const a of body.assignments){if('expected_version' in a)assert.deepEqual(a.expected_version,org.assignments[a.paper_id].version);org.assignments[a.paper_id]={folder_id:a.folder_name||a.folder_path?'f2':a.folder_id,tags:a.tags || org.assignments[a.paper_id].tags,version:{at:'2026-01-01T00:00:00Z',id:String(saves)}};if(a.folder_name||a.folder_path)org.folders.f2={id:'f2',name:a.folder_name||a.folder_path.at(-1),deleted:false,version:{at:'',id:''}};}data=org;}
  else if(route==='/api/classification/preview'){lastPreview=body;data={id:'test-preview',provider:'Synthetic',endpoint:'https://example.invalid/v1/chat/completions',model:'test',allow_new_folders:body.allow_new_folders,papers:[{paper_id:'p001'}],folders:[],messages:[{role:'user',content:'Synthetic paper\nEXACT DISCLOSED TEXT'}]};}
  else if(route==='/api/classification/cancel'){cancels++;data={state:'cancelled'};}
  else if(route==='/api/classification/send'){sends++;if(mode==='pending')await new Promise(r=>sendResolve=r);if(mode==='fail'){ok=false;data={error:'模拟失败'};}else data={suggestions:[{paper_id:'p001',folder_id:null,folder_name:'模型建议',tags:['建议标签'],reason:'测试'}]};}
  return {ok,status:ok?200:400,json:async()=>JSON.parse(JSON.stringify(data))};
 };
-for(const rel of ['js/common/util.js','js/common/journal-rank.js','js/common/confirm.js','js/library/app.js','js/library/sidebar.js','js/library/detail.js','js/library/organization.js','js/library/import.js'])w.eval(fs.readFileSync(path.join(root,rel),'utf8'));
+for(const rel of ['js/common/util.js','js/common/journal-rank.js','js/common/organization.js','js/common/classification-editor.js','js/common/confirm.js','js/library/app.js','js/library/sidebar.js','js/library/detail.js','js/library/organization.js','js/library/import.js'])w.eval(fs.readFileSync(path.join(root,rel),'utf8'));
 w.PR.useServerUi=()=>{};
 const tick=()=>new Promise(r=>setTimeout(r,10));
 const click=s=>{assert(d.querySelector(s),'missing '+s);d.querySelector(s).click();};
 const change=(s,value)=>{const el=d.querySelector(s);if(el.type==='checkbox')el.checked=value;else el.value=value;el.dispatchEvent(new w.Event('change',{bubbles:true}));};
-const open=()=>w.PR.lib.openOrganization(['p001']);
-async function preview(){click('#orgAI');await tick();assert.equal(d.querySelector('#orgSend').disabled,true);assert.equal(d.querySelector('#orgConsent').checked,false);assert.match(d.querySelector('.org-payload').textContent,/EXACT DISCLOSED TEXT/);}
+const open=(auto=false)=>w.PR.lib.openOrganization(['p001'],{auto});
 (async()=>{try{
- await tick();await w.PR.lib.load();assert.equal(d.querySelectorAll('#list .row').length,1);assert.match(d.querySelector('#side').textContent,/文件夹/);
- // Manual changes stay local until Save; cancellation is reversible.
- open();d.querySelector('[data-org-tags]').value='未保存';click('[data-org-close]');assert.equal(saves,0);assert.deepEqual(org.assignments.p001.tags,['原标签']);
- open();d.querySelector('[data-org-tags]').value='A, B, A';click('#orgSave');await tick();assert.equal(saves,1);assert.deepEqual(org.assignments.p001.tags,['A','B']);assert(!d.querySelector('#organizationDlg.open'));
- // Preview never sends; explicit consent required; repeat clicks coalesce.
- open();assert.equal(d.querySelector('#orgAllowNewFolders').checked,false);await preview();assert.equal(lastPreview.allow_new_folders,false);assert.equal(sends,0);click('[data-org-close]');await tick();assert.equal(sends,0);
- open();change('#orgAllowNewFolders',true);await preview();assert.equal(lastPreview.allow_new_folders,true);change('#orgConsent',true);click('#orgSend');click('#orgSend');await tick();assert.equal(sends,1);assert.equal(saves,1);assert.match(d.querySelector('.org-message').textContent,/尚未保存/);assert.equal(d.querySelector('[data-org-folder]').value,'__new__');assert.equal(d.querySelector('[data-org-name]').value,'模型建议');d.querySelector('[data-org-tags]').value='已复核';click('#orgSave');await tick();assert.equal(saves,2);assert.deepEqual(org.assignments.p001.tags,['已复核']);
- // Failed send leaves editor usable and preserves data.
- mode='fail';open();await preview();change('#orgConsent',true);click('#orgSend');await tick();assert.match(d.querySelector('#orgError').textContent,/模拟失败/);assert.equal(saves,2);click('[data-org-close]');await tick();
- // Late response after Cancel must not reopen the editor or apply changes.
- mode='pending';open();await preview();change('#orgConsent',true);click('#orgSend');await tick();click('[data-org-close]');mode='success';sendResolve();await tick();assert(!d.querySelector('#organizationDlg.open'));assert.equal(saves,2);assert(cancels>=3);
- // Batch selection persists through re-render and duplicate open is ignored.
- click('#batchSelect');change('[data-batch]',true);assert.equal(w.PR.lib.batch.size,1);w.PR.lib.render();assert.equal(d.querySelector('[data-batch]').checked,true);click('#organizeBtn');open();assert.equal(d.querySelectorAll('[data-org-index]').length,1);click('[data-org-close]');
- // Drag/drop folder-only moves must preserve newly synced tags rather than cached row tags.
- org.assignments.p001.tags=['并发同步标签'];
- const drop=new w.Event('drop',{bubbles:true,cancelable:true});Object.defineProperty(drop,'dataTransfer',{value:{getData:()=> 'p001'}});d.querySelector('[data-folder="f1"]').dispatchEvent(drop);await tick();assert.deepEqual(org.assignments.p001.tags,['并发同步标签']);assert.equal(org.assignments.p001.folder_id,'f1');
- // An unchanged legacy tag containing a comma is preserved when only moving folders.
- org.assignments.p001.tags=['legacy, compound'];await w.PR.lib.load();open();change('[data-org-folder]','f2');click('#orgSave');await tick();assert.deepEqual(org.assignments.p001.tags,['legacy, compound']);
- // Import options surface stable folder IDs; direct current-folder import uses them.
- w.PR.lib.folder='f1';w.PR.openImport();assert.equal(d.querySelector('#importFolder').value,'f1');change('#importFolder','f2');const input=d.querySelector('#fileInput');Object.defineProperty(input,'files',{configurable:true,value:[new w.File(['%PDF-synthetic'],'paper.pdf',{type:'application/pdf'})]});input.dispatchEvent(new w.Event('change'));await tick();assert.match(lastImport,/folder_id=f2/);assert.equal(sends,3); // success, failure, cancelled request only
- assert.equal(d.querySelector('#organizationDlg.open'),null);
- console.log('Desktop DOM regression passed: manual classification, folder import, multi-tags, batch selection, AI preview/consent/review/failure/cancel/repeat.');
+ await tick();await w.PR.lib.load();assert.equal(d.querySelectorAll('#list .row').length,1);
+ open();d.querySelector('[data-org-tags]').value='未保存';click('[data-org-close]');assert.equal(saves,0);
+ open();d.querySelector('[data-org-tags]').value='A, B, A';click('#orgSave');await tick();assert.equal(saves,1);assert.deepEqual(org.assignments.p001.tags,['A','B']);
+ // Opening automatically sends once and places defaults in placeholders, without saving.
+ open(true);await tick();assert.equal(sends,1);assert.equal(lastPreview.allow_new_folders,true);assert.equal(saves,1);
+ assert.equal(d.querySelector('[data-org-folder]').value,'');assert.equal(d.querySelector('[data-org-folder]').placeholder,'模型建议');assert.equal(d.querySelector('[data-org-tags]').placeholder,'建议标签');
+ click('#orgSave');await tick();assert.equal(saves,2);assert.deepEqual(org.assignments.p001.tags,['建议标签']);
+ // Edits while a request is pending win; duplicate requests coalesce.
+ mode='pending';open(true);await tick();d.querySelector('[data-org-tags]').value='人工复核';click('#orgAI');assert.equal(sends,2);sendResolve();await tick();assert.equal(d.querySelector('[data-org-tags]').value,'人工复核');click('#orgSave');await tick();assert.deepEqual(org.assignments.p001.tags,['人工复核']);
+ mode='fail';open(true);await tick();assert.match(d.querySelector('#orgError').textContent,/模拟失败/);assert.equal(d.querySelector('#orgSave').disabled,false);click('[data-org-close]');
+ // Cancel suppresses late responses and applies nothing.
+ mode='pending';open(true);await tick();const prior=saves;click('[data-org-close]');sendResolve();await tick();assert(!d.querySelector('#organizationDlg.open'));assert.equal(saves,prior);assert(cancels>=1);
+ mode='success';open();click('[data-org-clear="tags"]');click('[data-org-clear="folder"]');click('#orgSave');await tick();assert.deepEqual(org.assignments.p001.tags,[]);assert.equal(org.assignments.p001.folder_id,null);
+ org.assignments.p001.tags=['legacy, compound'];await w.PR.lib.load();open();d.querySelector('[data-org-folder]').value='已有文件夹';click('#orgSave');await tick();assert.deepEqual(org.assignments.p001.tags,['legacy, compound']);assert.equal(org.assignments.p001.folder_id,'f1');
+ // Tree retains ancestry and counts descendants; collapse persists.
+ org.folders.child={id:'child',name:'子主题',parent_id:'f1',version:{at:'',id:''},deleted:false};org.assignments.p001.folder_id='child';await w.PR.lib.load();
+ assert.equal(d.querySelector('[data-folder="f1"] .n').textContent,'1');assert(d.querySelector('[data-folder="child"]'));click('[data-folder-toggle="f1"]');assert(!d.querySelector('[data-folder="child"]'));click('[data-folder="f1"]');assert.equal(d.querySelectorAll('#list .row').length,1);click('[data-folder-toggle="f1"]');assert(d.querySelector('[data-folder="child"]'));
+ // Dragging a paper changes folder only, preserving newly synced tags.
+ org.assignments.p001.tags=['并发同步标签'];const drop=new w.Event('drop',{bubbles:true,cancelable:true});Object.defineProperty(drop,'dataTransfer',{value:{getData:()=> 'p001'}});d.querySelector('[data-folder="f1"]').dispatchEvent(drop);await tick();assert.deepEqual(org.assignments.p001.tags,['并发同步标签']);
+ click('#batchSelect');change('[data-batch]',true);assert.equal(w.PR.lib.batch.size,1);w.PR.lib.render();assert.equal(d.querySelector('[data-batch]').checked,true);w.PR.ls.set('folio-classification-auto',false);click('#organizeBtn');assert.equal(d.querySelectorAll('[data-org-index]').length,1);click('[data-org-close]');
+ w.PR.lib.folder='f1';w.PR.openImport();assert.equal(d.querySelector('#importFolder').value,'f1');change('#importFolder','f2');const input=d.querySelector('#fileInput');Object.defineProperty(input,'files',{configurable:true,value:[new w.File(['%PDF-synthetic'],'paper.pdf',{type:'application/pdf'})]});input.dispatchEvent(new w.Event('change'));await tick();assert.match(lastImport,/folder_id=f2/);
+ console.log('Desktop DOM: nested folders, subtree counts/filter/collapse, automatic suggestions, placeholders, overrides, error/cancel and legacy preservation passed');
 }finally{dom.window.close();}})().catch(error=>{console.error(error);process.exitCode=1;});
