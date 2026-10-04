@@ -15,15 +15,18 @@ import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.common.api.CommonStatusCodes;
 import com.google.android.gms.common.api.Scope;
 
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Native, on-device Google Drive authorization. Never logs or persists tokens. */
 public final class GoogleAuthorization {
     public static final int REQUEST_CODE = 6002;
     public static final String DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
+    public static final String DRIVE_READ_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
+
     public interface Callback {
-        void success(String token);
+        void success(String token, List<String> grantedScopes);
         void failure(String message);
     }
 
@@ -31,6 +34,7 @@ public final class GoogleAuthorization {
     private final AuthorizationClient client;
     private Callback pending;
     private boolean destroyed;
+    private boolean pendingFolderRead;
 
     public GoogleAuthorization(Activity activity) {
         this.activity = activity;
@@ -38,7 +42,7 @@ public final class GoogleAuthorization {
     }
 
     /** Call only for a user-initiated request from the trusted, main WebView frame. */
-    public void authorize(Callback callback) {
+    public void authorize(boolean folderImport, Callback callback) {
         if (!BuildConfig.GOOGLE_DRIVE_ENABLED) {
             callback.failure("此测试版尚未启用 Android 云盘授权。完成 Google Cloud 的应用包名与签名 SHA-1 登记后，请安装启用云盘授权的版本。");
             return;
@@ -57,8 +61,12 @@ public final class GoogleAuthorization {
             return;
         }
         pending = callback;
+        pendingFolderRead = folderImport;
+        List<Scope> scopes = new ArrayList<>();
+        scopes.add(new Scope(DRIVE_SCOPE));
+        if (folderImport) scopes.add(new Scope(DRIVE_READ_SCOPE));
         AuthorizationRequest request = AuthorizationRequest.builder()
-                .setRequestedScopes(Collections.singletonList(new Scope(DRIVE_SCOPE)))
+                .setRequestedScopes(scopes)
                 .setOptOutIncludingGrantedScopes(true)
                 .setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT)
                 .build();
@@ -108,13 +116,15 @@ public final class GoogleAuthorization {
         if (destroyed || pending == null) return;
         String token = result.getAccessToken();
         if (result.getGrantedScopes() == null || !result.getGrantedScopes().contains(DRIVE_SCOPE)
+                || (pendingFolderRead && !result.getGrantedScopes().contains(DRIVE_READ_SCOPE))
                 || token == null || token.isEmpty()) {
             fail("Google 未授予 Folio Read 所需的云盘文件权限，请重新连接并允许访问。");
             return;
         }
         Callback callback = pending;
         pending = null;
-        callback.success(token);
+        pendingFolderRead = false;
+        callback.success(token, result.getGrantedScopes());
     }
 
     /** Call after Drive rejects a token with HTTP 401; this does not revoke grants. */
@@ -127,9 +137,11 @@ public final class GoogleAuthorization {
     public void destroy() {
         destroyed = true;
         pending = null;
+        pendingFolderRead = false;
     }
 
     private void fail(String message) {
+        pendingFolderRead = false;
         Callback callback = pending;
         pending = null;
         if (callback != null && !destroyed) callback.failure(message);
