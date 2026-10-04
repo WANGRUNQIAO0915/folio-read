@@ -26,6 +26,9 @@ def clean(value):
     for key in ('type', 'title', 'container-title', 'volume', 'issue', 'page', 'number', 'DOI', 'URL', 'publisher', 'publisher-place', 'archive', 'archive_location', 'genre', 'language'):
         if value.get(key):
             out[key] = text(value[key])
+    out['type'] = {'journal-article': 'article-journal', 'proceedings-article': 'paper-conference', 'book-chapter': 'chapter', 'posted-content': 'article', 'edited-book': 'book', 'monograph': 'book', 'dissertation': 'thesis'}.get(out.get('type'), out.get('type') or 'document')
+    if value.get('article-number') and not out.get('number'):
+        out['number'] = text(value['article-number'])
     for key in ('author', 'editor'):
         out[key] = [{k: text(n[k]) for k in ('family', 'given', 'literal', 'suffix', 'non-dropping-particle', 'dropping-particle') if n.get(k)}
                     for n in value.get(key, [])[:500] if isinstance(n, dict) and (n.get('family') or n.get('literal'))] if isinstance(value.get(key, []), list) else []
@@ -76,11 +79,11 @@ def citation(ws):
     cache_path = ws.root / 'citation.json'
     cache = read_json(cache_path, {}) or {}
     if identifier:
-        record = cache.get('record') if cache.get('doi', '').lower() == identifier.lower() else None
+        record = cache.get('record') if cache.get('schema') == 2 and cache.get('doi', '').lower() == identifier.lower() else None
         if not record:
             try:
                 record = fetch_doi(identifier)
-                write_json_atomic(cache_path, {'doi': identifier, 'record': record})
+                write_json_atomic(cache_path, {'schema': 2, 'doi': identifier, 'record': record})
             except (ValueError, OSError, TimeoutError, json.JSONDecodeError):
                 warnings.append('DOI 书目暂时无法获取，使用本机资料；可稍后再试。')
         if record:

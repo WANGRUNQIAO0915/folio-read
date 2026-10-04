@@ -51,6 +51,18 @@ class BibliographyTests(unittest.TestCase):
             result = B.citation(self.ws)
         self.assertTrue(any('题名与本机原标题不同' in w for w in result['warnings']))
 
+    def test_crossref_types_and_article_number_and_legacy_cache_refresh(self):
+        raw = {**self.record, 'type': 'journal-article', 'article-number': 'e2023EF004086'}
+        raw.pop('number')
+        record = B.clean(raw)
+        self.assertEqual(record['type'], 'article-journal')
+        self.assertEqual(record['number'], 'e2023EF004086')
+        write_json_atomic(self.ws.root / 'citation.json', {'doi': '10.1234/test', 'record': self.record})
+        with patch.object(B, 'fetch_doi', return_value=record) as fetch:
+            self.assertEqual(B.citation(self.ws)['item']['number'], 'e2023EF004086')
+            self.assertEqual(B.citation(self.ws)['item']['number'], 'e2023EF004086')
+            self.assertEqual(fetch.call_count, 1)
+
     def test_preprint_and_organization_names(self):
         result = B.fallback({'title_en': 'Preprint', 'arxiv': 'arXiv:2401.00001', 'year': 2024, 'author': [{'literal': 'Research Consortium'}]})
         self.assertEqual(result['type'], 'article')
