@@ -35,6 +35,7 @@ jobs:
         run: |
           node tests/test_chat_export.cjs
           node tests/test_markup_links.cjs
+          node tests/test_reference_import.cjs
           node tests/test_mobile.cjs
           node tests/test_mobile_drive.cjs
           node tests/test_mobile_folder_import.cjs

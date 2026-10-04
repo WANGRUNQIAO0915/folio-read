@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import __version__, chat, chat_models, chat_store, cli_models, config, detect, engines, figures, paperdata, pdfwork, personal, prefs, search
+from . import __version__, chat, chat_models, chat_store, cli_models, config, detect, engines, figures, paperdata, pdfwork, personal, prefs, search, sources
 from .log import log, setup as setup_log, tail
 from .jobs import Jobs
 from . import research, study
@@ -302,6 +302,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(403, {"error": "bad token"})
         try:
             self._post()
+        except sources.SourceError as e:
+            self._json(400, {"error": str(e), "code": e.code})
         except (ValueError, KeyError) as e:
             self._json(400, {"error": str(e)})
         except Exception as e:  # noqa: BLE001
