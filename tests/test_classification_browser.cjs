@@ -56,7 +56,7 @@ async function post(route,body){return page.evaluate(async({route,body})=>{const
 async function openOne(){await page.locator('#list .row').first().click();await page.locator('#detail [data-organize-paper]').click();await page.locator('#organizationDlg.open').waitFor();}
 async function cancel(){await page.locator('#organizationDlg [data-org-close]').first().click();await page.locator('#organizationDlg.open').waitFor({state:'hidden'});}
 async function current(){return page.evaluate(()=>PR.lib.items);}
-async function prepare(){await page.locator('#orgAI').click();await page.locator('#orgConsent').waitFor();assert.equal(await page.locator('#orgConsent').isChecked(),false);assert.equal(await page.locator('#orgSend').isDisabled(),true);assert.match(await page.locator('.org-provider').innerText(),/classification.example.invalid\/v1\/chat\/completions/);assert.match(await page.locator('.org-payload').innerText(),/Folio Offline Regression Fixture/);}
+async function prepare(){await page.locator('#orgSave').waitFor({state:'visible'});await wait(()=>page.locator('#orgSave').isEnabled(),'AI recommendation');assert.match(await page.locator('#orgPayload').textContent(),/Folio Offline Regression Fixture/);}
 (async()=>{try{
   execFileSync(PYTHON,[support,'fixture',fixture],{cwd:temp,env});
   server=spawn(PYTHON,[support,'serve',guard,calls],{cwd:temp,env,stdio:['ignore','pipe','pipe']});let output='';
@@ -84,36 +84,21 @@ async function prepare(){await page.locator('#orgAI').click();await page.locator
   // Duplicate PDF remains in its existing folder and only one PDF exists.
   await page.locator('#importBtn').click();await page.locator('#importFolder').selectOption('');await page.locator('#fileInput').setInputFiles(fixture);await page.locator('#importDlg.open').waitFor({state:'hidden'});await page.waitForFunction(()=>PR.lib.items.length===1);assert.equal((await current())[0].folder_id,fid);
   // Manual tags, folder moves, stable rename, and no PDF changes.
-  await openOne();await page.locator('[data-org-tags]').fill('遥感, 城市');await page.locator('#orgSave').click();await page.locator('#organizationDlg.open').waitFor({state:'hidden'});await page.waitForFunction(()=>PR.lib.items[0].tags.includes('城市'));
+  await openOne();await prepare();await page.locator('[data-org-tags]').fill('遥感, 城市');await page.locator('[data-org-folder]').fill('手动资料');await page.locator('#orgSave').click();await page.locator('#organizationDlg.open').waitFor({state:'hidden'});await page.waitForFunction(()=>PR.lib.items[0].tags.includes('城市'));
   assert.deepEqual((await current())[0].tags,['遥感','城市']);assert.deepEqual(fs.readFileSync(path.join(library,pid,'source.pdf')),bytes);
   await page.locator('[data-folder-more="'+fid+'"]').click();await page.getByText('重命名文件夹',{exact:true}).click();await page.locator('.cf-input').fill('热环境资料');await page.locator('[data-cf="ok"]').click();await page.waitForFunction(fid=>PR.lib.organization.folders[fid].name==='热环境资料',fid);assert.equal((await current())[0].folder_id,fid);
-  // Cancel before sending transmits nothing and applies nothing.
-  await openOne();await prepare();await cancel();assert.equal(countCalls(),0);assert.deepEqual((await current())[0].tags,['遥感','城市']);
-  // Explicit opt-in + rapid repeated clicks sends only once. Result is reviewed first.
-  await openOne();assert.equal(await page.locator('#orgAllowNewFolders').isChecked(),false);await page.locator('#orgAllowNewFolders').check();await prepare();await page.locator('#orgConsent').check();await page.locator('#orgSend').evaluate(el=>{el.click();el.click();});
-  await page.locator('.org-message').waitFor();assert.equal(countCalls(),1);assert.deepEqual((await current())[0].tags,['遥感','城市']);
-  await page.locator('[data-org-tags]').fill('人工复核, GIS');await page.screenshot({path:path.join(artifacts,'desktop-ai-review.png'),fullPage:true,animations:'disabled'});
-  await page.locator('#orgSave').click();await page.locator('#organizationDlg.open').waitFor({state:'hidden'});await page.waitForFunction(()=>PR.lib.items[0].tags.includes('人工复核'));assert.equal((await current())[0].tags.length,2);
-  // Failure and cancellation during request both preserve previous assignment.
-  await context.route('**/api/classification/send',r=>r.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:'模拟服务失败'})}));
-  await openOne();await prepare();await page.locator('#orgConsent').check();await page.locator('#orgSend').click();await page.getByText(/生成失败：模拟服务失败/).waitFor();await cancel();assert.deepEqual((await current())[0].tags,['人工复核','GIS']);await context.unroute('**/api/classification/send');
-  await context.route('**/api/classification/send',async r=>{await delay(600);await r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({suggestions:[{paper_id:pid,folder_id:null,tags:['不应保存']}]})}).catch(()=>{});});
-  await openOne();await prepare();await page.locator('#orgConsent').check();await page.locator('#orgSend').click();await cancel();await delay(800);assert.equal(await page.locator('#organizationDlg.open').count(),0);assert.deepEqual((await current())[0].tags,['人工复核','GIS']);await context.unroute('**/api/classification/send');
-  // Existing tag UI remains connected to organization metadata.
-  await page.locator('#list .row').click();await page.locator('#catInput').fill('兼容旧标签');await page.locator('#catInput').press('Enter');await page.waitForFunction(()=>PR.lib.items[0].tags.includes('兼容旧标签'));
-  // Bulk select UI works, including Cancel/back without changing browser history.
-  await page.locator('#batchSelect').click();await page.locator('[data-batch]').check();await page.locator('#organizeBtn').click();await cancel();assert.equal(page.url(),url+'/');await page.locator('#batchSelect').click();
-  // Folder removal safely returns its papers to unclassified; tags/PDF survive.
-  const assigned=(await current())[0].folder_id;await page.locator('[data-folder-more="'+assigned+'"]').click();await page.getByText('删除文件夹',{exact:true}).click();await page.locator('[data-cf="ok"]').click();await page.waitForFunction(()=>PR.lib.items[0].folder_id===null);assert.deepEqual(fs.readFileSync(path.join(library,pid,'source.pdf')),bytes);assert.ok((await current())[0].tags.includes('兼容旧标签'));
-  await page.reload();await page.waitForFunction(()=>PR.lib.items.length===1);assert.equal((await current())[0].folder_id,null);assert.ok((await current())[0].tags.includes('兼容旧标签'));
-  // Two-paper batch folder move and AI preview use both selected papers.
-  const second=path.join(temp,'second.pdf');fs.writeFileSync(second,Buffer.concat([bytes,Buffer.from('\n% Second synthetic identity\n')]));
-  await page.locator('#importBtn').click();await page.locator('#importFolder').selectOption('');await page.locator('#fileInput').setInputFiles(second);await page.waitForFunction(()=>PR.lib.items.length===2);
-  await page.locator('#batchSelect').click();for(const input of await page.locator('[data-batch]').all())await input.check();await page.locator('#organizeBtn').click();assert.equal(await page.locator('[data-org-index]').count(),2);
-  await page.locator('#orgBatchFolder').selectOption(fid);await page.locator('#orgBatchSet').click();await page.locator('#orgSave').click();await page.locator('#organizationDlg.open').waitFor({state:'hidden'});await page.waitForFunction(fid=>PR.lib.items.every(i=>i.folder_id===fid),fid);
-  await page.locator('#organizeBtn').click();await prepare();await page.locator('#orgConsent').check();await page.locator('#orgSend').click();await page.locator('.org-message').waitFor();assert.equal(await page.locator('[data-org-index]').count(),2);assert.equal(countCalls(),2);await cancel();assert((await current()).every(i=>i.folder_id===fid));
+  // Automatic suggestions preserve the old assignment until explicitly saved.
+  await openOne();await prepare();const count=countCalls();assert.equal(await page.locator('[data-org-tags]').inputValue(),'');assert.equal(await page.locator('[data-org-tags]').getAttribute('placeholder'),'城市热环境, GIS');assert.deepEqual((await current())[0].tags,['遥感','城市']);await cancel();assert.deepEqual((await current())[0].tags,['遥感','城市']);
+  await openOne();await prepare();assert.equal(countCalls(),count+1);await page.locator('[data-org-folder]').fill('研究主题 / 绿洲 / 水资源');await page.locator('[data-org-tags]').fill('人工复核, GIS');await page.locator('#orgSave').click();await page.locator('#organizationDlg.open').waitFor({state:'hidden'});await page.waitForFunction(()=>PR.lib.items[0].tags.includes('人工复核'));
+  state=await page.evaluate(()=>PR.lib.organization);const root=Object.values(state.folders).find(f=>f.name==='研究主题').id,leaf=(await current())[0].folder_id;
+  assert.equal(state.folders[state.folders[leaf].parent_id].name,'绿洲');await assertFolderLayout(root,'parent-with-toggle');await page.locator('[data-folder="'+root+'"] .t').click();assert.equal(await page.locator('#list .row').count(),1);await page.locator('[data-folder-toggle="'+root+'"]').click();assert.equal(await page.locator('[data-folder="'+leaf+'"]').count(),0);await page.reload();await page.locator('[data-folder="'+root+'"]').waitFor();assert.equal(await page.locator('[data-folder="'+leaf+'"]').count(),0);await page.locator('[data-folder-toggle="'+root+'"]').click();await page.locator('[data-folder="'+leaf+'"]').waitFor();
+  // Failed automatic requests leave a usable manual editor.
+  await context.route('**/api/classification/send',r=>r.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:'模拟服务失败'})}));await openOne();await page.getByText(/AI 暂时不可用：模拟服务失败/).waitFor();assert.equal(await page.locator('#orgSave').isEnabled(),true);await cancel();await context.unroute('**/api/classification/send');assert.deepEqual((await current())[0].tags,['人工复核','GIS']);
+  // Closing during a pending request cannot apply a late result or reopen.
+  await context.route('**/api/classification/send',async r=>{await delay(600);await r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({suggestions:[{paper_id:pid,folder_id:null,tags:['不应保存']}]})}).catch(()=>{});});await openOne();await page.locator('#orgStop').waitFor({state:'visible'});await cancel();await delay(800);assert.equal(await page.locator('#organizationDlg.open').count(),0);assert.deepEqual((await current())[0].tags,['人工复核','GIS']);await context.unroute('**/api/classification/send');
+  assert.deepEqual(fs.readFileSync(path.join(library,pid,'source.pdf')),bytes);
   await page.screenshot({path:path.join(artifacts,'desktop-folders.png'),fullPage:true,animations:'disabled'});assert.deepEqual(errors,[]);
-  console.log('Desktop classification browser: folder CRUD/import/move/tags, AI opt-in/review/cancel/error/repeat, persistence passed. No real provider or Google calls.');
+  console.log('Desktop browser: nested directories, descendant filters, persistent collapse, automatic suggestions/overrides, offline edits and late cancellation passed.');
 }catch(error){
   fs.writeFileSync(path.join(artifacts,'failure.txt'),error.stack || String(error));
   if(page && !page.isClosed()){

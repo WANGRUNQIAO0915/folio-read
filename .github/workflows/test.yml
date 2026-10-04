@@ -42,6 +42,7 @@ jobs:
           node tests/test_mobile_folder_import.cjs
           node tests/test_android_drive.cjs
           node tests/test_citations.cjs
+          node tests/test_bibliography.cjs
           node tests/test_outline.cjs
           node tests/test_mobile_knowledge.cjs
           node tests/test_mobile_organization.cjs

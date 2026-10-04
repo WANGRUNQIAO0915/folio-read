@@ -49,7 +49,7 @@ w.fetch=async(url,options={})=>{
  }
  return {ok,status:ok?200:409,json:async()=>clone(data)};
 };
-for(const rel of ['js/common/util.js','js/common/journal-rank.js','js/common/confirm.js','js/library/app.js','js/library/sidebar.js','js/library/detail.js','js/library/organization.js','js/library/naming.js'])w.eval(fs.readFileSync(path.join(root,rel),'utf8'));
+for(const rel of ['js/common/util.js','js/common/journal-rank.js','js/common/organization.js','js/common/classification-editor.js','js/common/confirm.js','js/library/app.js','js/library/sidebar.js','js/library/detail.js','js/library/organization.js','js/library/naming.js'])w.eval(fs.readFileSync(path.join(root,rel),'utf8'));
 w.PR.useServerUi=()=>{};
 const tick=()=>new Promise(r=>setTimeout(r,15));
 const el=s=>{const e=d.querySelector(s);assert(e,'missing '+s);return e;};

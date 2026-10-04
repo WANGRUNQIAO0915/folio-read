@@ -64,6 +64,8 @@ def request(api, endpoint, messages, cancel):
     if api.get('api_key'):
         headers['Authorization'] = 'Bearer ' + api['api_key']
     body = {'model': api['model'], 'temperature': 0.2, 'messages': messages}
+    if api.get('preset') == 'llamacpp' and api.get('reasoning_effort') == 'none':
+        body['reasoning_effort'] = 'none'
     req = urllib.request.Request(endpoint, json.dumps(body).encode('utf-8'), headers, method='POST')
     try:
         # No implicit retries: a failed/ambiguous request requires another preview.
@@ -153,7 +155,8 @@ class Classification:
         api, disclosure, fingerprint = _configuration(cfg, model_id)
         organization = Organization(self.lib)
         state = organization.load()
-        folders = [{'id': f['id'], 'name': f['name']} for f in sorted(state['folders'].values(), key=lambda f: f['id']) if not f['deleted']]
+        from .organization import folder_path
+        folders = [{'id': f['id'], 'name': folder_path(state, f['id'])} for f in sorted(state['folders'].values(), key=lambda f: f['id']) if not f['deleted']]
         if len(folders) > 200:
             raise ValueError('分类最多支持 200 个文件夹，请先整理文件夹')
         allow_new_folders = body.get('allow_new_folders') is True

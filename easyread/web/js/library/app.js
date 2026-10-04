@@ -54,7 +54,7 @@
     const q = L.q.trim().toLowerCase();
     let list = L.items.filter(view[3]);
     if (L.tag) list = list.filter((i) => (i.tags || []).includes(L.tag));
-    if (L.folder !== undefined) list = list.filter((i) => (i.folder_id || null) === L.folder);
+    if (L.folder !== undefined) list = list.filter((i) => L.folder ? window.FolioOrganization.within(L.organization,i.folder_id,L.folder) : !i.folder_id);
     if (q) list = list.filter((i) => L.searchHits.has(i.id));
     const key = { opened: (i) => i.last_opened || i.added, added: (i) => i.added, year: (i) => String(i.year || ""), title: (i) => i.display_title || i.title_zh || i.title_en };
     const k = key[L.sort] || key.opened;

@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const B=require('../easyread/web/js/common/bibliography.js'),CSL=require('../easyread/web/vendor/csl/citeproc.js');
+const dir='easyread/web/vendor/csl/',assets=Object.fromEntries(Object.entries({apa:'apa.csl',gb:'gb.csl',en:'locales-en-US.xml',zh:'locales-zh-CN.xml'}).map(([k,f])=>[k,fs.readFileSync(dir+f,'utf8')]));
+const item={id:'p',type:'article-journal',title:'Urban cooling',author:[{family:'Wang',given:'Xiao'},{family:'Cui',given:'Wei'}],issued:{'date-parts':[[2024]]},'container-title':'Earth’s Future',volume:'12',issue:'3',number:'e2024EF01',DOI:'10.1029/test'};
+const apa=B.format(item,'apa',assets,CSL);
+assert.equal(apa.text,'Wang, X., & Cui, W. (2024). Urban cooling. Earth’s Future, 12(3), Article e2024EF01. https://doi.org/10.1029/test');
+assert.match(apa.html,/<i>Earth’s Future<\/i>, <i>12<\/i>\(3\)/);
+assert.match(B.format(item,'gb',assets,CSL).text,/2024, 12\(3\): e2024EF01/);
+const many={...item,author:Array.from({length:21},(_,i)=>({family:'Author'+i,given:'Alice'}))};
+const long=B.format(many,'apa',assets,CSL).text;assert.match(long,/Author18/);assert.doesNotMatch(long,/Author19/);assert.match(long,/… Author20/);
+const bib=B.bibtex({...item,page:'101–109',title:'A & B_100%'});
+assert.match(bib,/author = \{Wang, Xiao and Cui, Wei\}/);assert.match(bib,/pages = \{101--109\}/);assert.match(bib,/A \\& B\\_100\\%/);assert.match(bib,/volume = \{12\}/);
+assert.match(B.bibtex({...item,type:'article',archive:'arXiv',archive_location:'2401.00001',author:[{literal:'Climate Consortium'}]}),/@misc\{[\s\S]*author = \{\{Climate Consortium\}\}[\s\S]*archivePrefix = \{arXiv\}/);
+assert.doesNotMatch(B.format({...item,title:'<script>alert(1)</script>'},'apa',assets,CSL).html,/<script>/);
+console.log('Standard CSL APA/GB, article numbers, long author lists, formatted clipboard and BibTeX passed');

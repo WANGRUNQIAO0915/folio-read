@@ -38,7 +38,7 @@ jobs:
       - name: Frontend regression tests
         shell: bash
         run: |
-          for test in test_chat_export test_markup_links test_reference_import test_local_settings test_mobile test_mobile_drive test_mobile_folder_import test_android_drive test_citations test_outline test_mobile_knowledge test_mobile_organization test_mobile_organization_drive test_mobile_organization_ui test_mobile_naming; do
+          for test in test_chat_export test_markup_links test_reference_import test_local_settings test_mobile test_mobile_drive test_mobile_folder_import test_android_drive test_citations test_bibliography test_outline test_mobile_knowledge test_mobile_organization test_mobile_organization_drive test_mobile_organization_ui test_mobile_naming; do
             node "tests/$test.cjs" || exit 1
           done
       - name: Build portable Windows application

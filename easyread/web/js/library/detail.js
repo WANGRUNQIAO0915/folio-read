@@ -3,26 +3,30 @@
   "use strict";
   const L = PR.lib;
 
-  function citeKey(i) {
-    const last = (i.authors || "anon").split(",")[0].trim().split(/\s+/).pop().replace(/[^A-Za-z]/g, "").toLowerCase() || "anon";
-    const word = (i.title_en || "paper").split(/\s+/).find((w) => w.length > 3) || "paper";
-    return last + (i.year || "") + word.replace(/[^A-Za-z]/g, "").toLowerCase();
-  }
-  PR.cite = function (i, style) {
-    const authors = (i.authors || "").split(",").map((s) => s.trim()).filter(Boolean);
-    if (style === "bibtex") {
-      const arx = (i.arxiv || "").replace(/^arXiv:/i, "").split(/\s/)[0];
-      return "@article{" + citeKey(i) + ",\n  title = {" + i.title_en + "},\n  author = {" + authors.join(" and ") + "},\n  year = {" + (i.year || "") + "}" +
-        (arx ? ",\n  eprint = {" + arx + "},\n  archivePrefix = {arXiv}" : "") + (i.doi ? ",\n  doi = {" + i.doi + "}" : "") + (i.url ? ",\n  url = {" + i.url + "}" : "") + "\n}";
-    }
-    if (style === "apa") {
-      const apaNames = authors.slice(0, 20).map((a) => { const p = a.split(/\s+/); return p.length > 1 ? p.pop() + ", " + p.map((x) => x[0] + ".").join(" ") : a; });
-      const who = apaNames.length > 1 ? apaNames.slice(0, -1).join(", ") + ", & " + apaNames[apaNames.length - 1] : apaNames[0] || "";
-      return who + " (" + (i.year || "n.d.") + "). " + i.title_en + ". " + (i.venue || i.arxiv || "") + (i.url ? ". " + i.url : "");
-    }
-    // GB/T 7714 简式
-    const names = authors.slice(0, 3).map((a) => { const p = a.split(/\s+/); return p.length > 1 ? p.pop() + " " + p.map((x) => x[0]).join(" ") : a; });
-    return names.join(", ") + (authors.length > 3 ? ", et al" : "") + ". " + i.title_en + "[J/OL]. " + (i.venue || i.arxiv || "") + ", " + (i.year || "") + "." + (i.url ? " " + i.url : "");
+  let citationAssets;
+  const getAssets=()=>citationAssets||(citationAssets=Promise.all(['apa.csl','gb.csl','locales-en-US.xml','locales-zh-CN.xml'].map(name=>fetch('/web/vendor/csl/'+name).then(r=>{if(!r.ok)throw new Error('引用模板加载失败');return r.text();}))).then(([apa,gb,en,zh])=>({apa,gb,en,zh})).catch(e=>{citationAssets=null;throw e;}));
+  let citationRun=0;
+  PR.copyCitation=async function(i,style){
+    const run=++citationRun;PR.showText('复制引用','正在核对 DOI 书目…');
+    const dlg=PR.$('#textDlg'),box=dlg.querySelector('.dialog');
+    try{
+      const [record,assets]=await Promise.all([PR.api('/api/p/'+encodeURIComponent(i.id)+'/citation'),getAssets()]);
+      if(run!==citationRun||!dlg.classList.contains('open'))return;
+      let rendered;
+      box.innerHTML='<h2>复制引用</h2><select class="input" id="citationStyle"><option value="gb">GB/T 7714—2015</option><option value="apa">APA 第 7 版</option><option value="bibtex">BibTeX</option></select><p class="hint">书目来源：'+PR.esc(record.source)+'</p>'+record.warnings.map(w=>'<p class="citation-warning">'+PR.esc(w)+'</p>').join('')+'<pre class="citation-preview" tabindex="0"></pre><p class="hint">引文使用原始出版题名。APA 复制到 Word 等支持格式的编辑器时保留斜体。</p><p class="hint citation-credit">Citation processing: <a href="https://citeproc-js.readthedocs.io/" target="_blank" rel="noopener">citeproc-js</a> · © 2009–2019 Frank Bennett · <a href="/web/vendor/csl/NOTICE.md" target="_blank">CSL 模板与许可</a></p><div class="actions"><button class="btn" data-close>关闭</button><button class="btn accent" id="citationCopy">复制</button></div>';
+      const select=box.querySelector('#citationStyle');select.value=style;
+      function draw(){rendered=window.FolioBibliography.format(record.item,select.value,assets);box.querySelector('.citation-preview').textContent=rendered.text;}
+      select.onchange=draw;draw();select.focus();
+      box.querySelector('#citationCopy').onclick=async()=>{
+        try{
+          if(select.value==='apa'&&navigator.clipboard?.write&&window.ClipboardItem){
+            try{await navigator.clipboard.write([new ClipboardItem({'text/plain':new Blob([rendered.text],{type:'text/plain'}),'text/html':new Blob([rendered.html],{type:'text/html'})})]);}
+            catch(_){if(!await PR.copyText(rendered.text))return;}
+          }else if(!await PR.copyText(rendered.text))return;
+          PR.toast('引用已复制'+(record.warnings.length?'，请留意书目提示':''));
+        }catch(e){PR.toast('复制失败，可直接选中上方引用复制');}
+      };
+    }catch(e){if(run===citationRun&&dlg.classList.contains('open'))PR.showText('引用暂时无法生成',e.message);}
   };
   async function copy(text, what) {
     try { await navigator.clipboard.writeText(text); PR.toast("已复制" + what); }
@@ -95,6 +99,7 @@
       '<span>出处</span><span contenteditable="plaintext-only" data-meta="venue">' + PR.esc(i.venue || i.arxiv) + "</span>" +
       '<span>链接</span><span contenteditable="plaintext-only" data-meta="url">' + PR.esc(i.url) + "</span>" +
       "<span>添加</span><span>" + PR.esc(PR.relTime(i.added)) + (i.last_opened ? "　·　上次打开 " + PR.esc(PR.relTime(i.last_opened)) : "") + "</span></div>" +
+      '<details class="citation-metadata"><summary>引用书目补充（缺失时填写）</summary>'+[['volume','卷号'],['issue','期号'],['citation_pages','出版页码（如 101–109）'],['article_number','文章号（如 e2024001）']].map(([k,label])=>'<label>'+label+'</label><div contenteditable="plaintext-only" class="title-en" data-meta="'+k+'">'+PR.esc(i[k]||'')+'</div>').join('')+'</details>' +
       window.FolioJournal.panel(i,i.id,true) + "<h4>翻译</h4>" + jobHtml(i) +
       (i.notes + i.highlights + i.open_questions ? '<p class="mine-line">' + [i.notes && i.notes + " 条笔记", i.highlights && i.highlights + " 处划线", i.open_questions && i.open_questions + " 个问题待回答"].filter(Boolean).join(" · ") + "</p>" : "") +
       (i.abstract ? '<h4>摘要</h4><div class="abstract" id="abs">' + PR.esc(i.abstract.replace(/\$([^$]+)\$/g, "$1")) + '</div><button class="linkish" data-d="abs">展开全文</button>' : "") +
@@ -130,9 +135,9 @@
     else if (act === "read") L.openReader(i.id);
     else if (act === "abs") { PR.$("#abs").classList.toggle("open"); d.textContent = PR.$("#abs").classList.contains("open") ? "收起" : "展开全文"; }
     else if (act === "cite") PR.menu(d, [
-      { label: "GB/T 7714 · 中文论文、学位论文", icon: "copy", fn: () => copy(PR.cite(i, "gb"), " GB/T 7714 引用") },
-      { label: "APA · 英文论文常用", icon: "copy", fn: () => copy(PR.cite(i, "apa"), " APA 引用") },
-      { label: "BibTeX · LaTeX / Overleaf、Zotero 导入", icon: "copy", fn: () => copy(PR.cite(i, "bibtex"), " BibTeX") },
+      { label: "GB/T 7714—2015", icon: "copy", fn: () => PR.copyCitation(i, "gb") },
+      { label: "APA 第 7 版", icon: "copy", fn: () => PR.copyCitation(i, "apa") },
+      { label: "BibTeX · LaTeX / Overleaf、Zotero 导入", icon: "copy", fn: () => PR.copyCitation(i, "bibtex") },
       "-",
       { label: "标题 + 链接 · 发给别人", icon: "link", fn: () => copy((i.title_zh ? i.title_zh + "（" + i.title_en + "）" : i.title_en) + "\n" + (i.url || ""), "标题和链接") },
     ]);
@@ -164,7 +169,7 @@
       ...L.catMenuItems(id),
       { label: "标为未读", fn: setStatus("unread") }, { label: "标为在读", fn: setStatus("reading") }, { label: "标为已读", fn: setStatus("done") },
       "-",
-      { label: "复制 BibTeX", icon: "copy", fn: () => copy(PR.cite(i, "bibtex"), " BibTeX") },
+      { label: "复制 BibTeX", icon: "copy", fn: () => PR.copyCitation(i, "bibtex") },
       { label: "导出离线 HTML（可发给别人）", icon: "download", fn: () => { PR.toast("正在打包…"); location.href = "/api/p/" + id + "/export"; } },
       { label: "打开所在文件夹", icon: "folder", fn: () => PR.api("/api/p/" + id + "/reveal", { method: "POST", body: {} }).catch((e) => PR.toast(PR.esc(e.message))) },
       { label: "全部重新翻译", icon: "redo", fn: () => retranslateAll(i) },
