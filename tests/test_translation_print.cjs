@@ -25,14 +25,17 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function inspect(file, bilingual) {
-  const result = python('inspect', file), text = result.text.replace(/\s+/g, '');
+  const result = python('inspect', file), text = result.text.normalize('NFKC').replace(/\s+/g, '');
+  // Chromium's Noto ToUnicode maps may use compatibility radicals (e.g. ⽂).
+  // Preserve the raw extraction for diagnosis and normalize only for comparison.
+  fs.writeFileSync(file.replace(/\.pdf$/, '-inspection.json'), JSON.stringify(result, null, 2));
   assert(result.pages.length >= 3, 'The fixture must produce multiple real PDF pages');
   for (const token of ['保存后的中文段落', 'LATEST_DISK_PARAGRAPH', '保存后的列表', 'SAVED_LIST', 'SAVED_CAPTION',
     'SOURCE_EMPTY_LIST', 'SOURCE_EMPTY_CAPTION', 'MISSING_TRANSLATION_SOURCE', 'TABLE_VALUE_42', 'REFERENCE_SENTINEL',
     '译文尚不完整', '原文第4页', '译文段落24']) assert(text.includes(token), 'PDF missing ' + token);
   for (const token of ['OLD_PARAGRAPH_TRANSLATION', 'OLD_LIST_TRANSLATION', 'OLD_FIGURE_CAPTION', 'OLD_EMPTY_CAPTION',
     'OLD_EMPTY_LIST_TRANSLATION', 'PRIVATE_READER_NOTE', 'PRIVATE_INLINE_AGENT_NOTE', 'PRIVATE_DISCUSSION', 'PRIVATE_PAPER_NOTE',
-    'CONTROL_SENTINEL', 'SIDEBAR_SENTINEL']) assert(!text.includes(token), 'PDF leaked ' + token);
+    'CONTROL_SENTINEL', 'SIDEBAR_SENTINEL', 'Details']) assert(!text.includes(token), 'PDF leaked ' + token);
   for (const token of ['ORIGINAL_TRANSLATED_PARA', 'ORIGINAL_TRANSLATED_LIST', 'ORIGINAL_TRANSLATED_CAPTION', 'ORIGINAL_LONG_24']) {
     assert.equal(text.includes(token), bilingual, 'Wrong language mode for ' + token);
   }
@@ -45,8 +48,8 @@ function inspect(file, bilingual) {
     assert.deepEqual(item.image_overflow, [], 'Image outside printable margins on page ' + (number + 1));
     assert(item.nonwhite_pixels > 1000, 'No blank PDF page ' + (number + 1));
     assert.deepEqual(item.corner, [255, 255, 255], 'PDF background is white');
+    for (const pixel of item.original_backgrounds) assert.deepEqual(pixel, [255, 255, 255], 'Original-page image retains its white background');
   }
-  fs.writeFileSync(file.replace(/\.pdf$/, '-inspection.json'), JSON.stringify(result, null, 2));
   return {pages: result.pages.length, images: result.pages.reduce((sum, item) => sum + item.images, 0)};
 }
 
@@ -67,6 +70,9 @@ async function printLayout(mode) {
     return {classes: root.className, color: getComputedStyle(root).color, background: getComputedStyle(root).backgroundColor,
       fontSize: getComputedStyle(root).fontSize, fonts: document.fonts.status, overflow,
       readyImages: [...root.querySelectorAll('img')].every(img => img.complete && img.naturalWidth > 0 && img.loading === 'eager'),
+      imageFilters: [...root.querySelectorAll('img')].map(img => getComputedStyle(img).filter),
+      pageBackground: getComputedStyle(document.documentElement).backgroundColor,
+      pageColorScheme: getComputedStyle(document.documentElement).colorScheme,
       controls: root.querySelectorAll('button, aside, mark, .card, .inline-note, .figure-tools, .edited-dot').length,
       en: getComputedStyle(root.querySelector('#print-b-p-edit .en')).display,
       fallback: getComputedStyle(root.querySelector('#print-b-missing .en')).display,
@@ -80,6 +86,9 @@ async function printLayout(mode) {
   assert.equal(result.fontSize, '16px');
   assert.equal(result.fonts, 'loaded');
   assert.equal(result.readyImages, true);
+  assert(result.imageFilters.every(filter => filter === 'none'), 'Dark reader image filters are absent from print');
+  assert.equal(result.pageBackground, 'rgb(255, 255, 255)');
+  assert.equal(result.pageColorScheme, 'light');
   assert.equal(result.controls, 0);
   assert.equal(result.en, mode === 'bi' ? 'block' : 'none');
   assert.equal(result.fallback, 'block');

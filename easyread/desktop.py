@@ -370,6 +370,7 @@ def check_translation_pdf(window, home: Path, paper_id: str, checks: dict, wait_
     """
     from pypdf import PdfReader
     import pypdfium2
+    import unicodedata
 
     root = home / 'library' / paper_id
     before = {name: (root / name).read_bytes() for name in ('source.pdf', 'paper.json')}
@@ -396,7 +397,9 @@ def check_translation_pdf(window, home: Path, paper_id: str, checks: dict, wait_
             if not checks['native_pdf_' + mode + '_saved']:
                 raise RuntimeError('WebView2 译文 PDF 验证失败：' + str(result))
             pdf = PdfReader(path)
-            text = '\n'.join(page.extract_text() or '' for page in pdf.pages)
+            # Some Chromium-embedded CJK fonts map glyphs to compatibility
+            # radicals. Normalize those equivalent codepoints for text checks.
+            text = unicodedata.normalize('NFKC', '\n'.join(page.extract_text() or '' for page in pdf.pages))
             compact = ''.join(text.split())
             checks['native_pdf_' + mode + '_multiple_a4_pages'] = len(pdf.pages) >= 2 and all(
                 abs(float(page.mediabox.width) - 595.28) < 2 and

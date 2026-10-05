@@ -3,7 +3,8 @@
 .translation-export-dialog::backdrop { background: #0006; }
 #translationPrint {
   position: absolute; left: -100000px; top: 0; width: 180mm;
-  --ink: #111; --ink-2: #333; --ink-3: #555; --bg: #fff; --surface: #fff; --rule: #bbb; --rule-2: #ccc; --accent: #333;
+  --ink: #111; --ink-2: #333; --ink-3: #555; --bg: #fff; --surface: #fff; --rule: #bbb; --rule-2: #ccc; --accent: #333; --accent-soft: #f3f3f3;
+  color-scheme: light;
   color: #111; background: white; font: 12pt/1.65 "Noto Serif CJK SC", "SimSun", "Microsoft YaHei", serif;
   text-align: left; overflow-wrap: anywhere;
 }
@@ -24,7 +25,7 @@
 #translationPrint .print-warning { border: 1px solid #aaa; padding: 2mm; }
 #translationPrint .paper-information-body, #translationPrint .paper-source-links ul { max-height: none; overflow: visible; }
 #translationPrint .blk-figure, #translationPrint .math-row, #translationPrint .orig-page { break-inside: avoid; page-break-inside: avoid; }
-#translationPrint img { display: block; max-width: 100%; width: auto; height: auto; max-height: 220mm; object-fit: contain; margin: 2mm auto; }
+#translationPrint img { filter: none !important; display: block; max-width: 100%; width: auto; height: auto; max-height: 220mm; object-fit: contain; margin: 2mm auto; }
 #translationPrint .caption { margin: 2mm 0; font-size: 10pt; break-before: avoid; }
 #translationPrint .math-body, #translationPrint .tbl-wrap { max-width: 100%; overflow: visible; }
 #translationPrint .math-row { display: flex; align-items: center; gap: 3mm; }
@@ -37,6 +38,7 @@
 #translationPrint a { color: #222; }
 @page { size: A4; margin: 15mm; }
 @media print {
+  :root:has(body.translation-print-active) { background: #fff !important; color-scheme: light !important; }
   body.translation-print-active { background: #fff !important; margin: 0 !important; padding: 0 !important; }
   body.translation-print-active > *:not(#translationPrint) { display: none !important; }
   body.translation-print-active > #translationPrint { display: block !important; position: static; width: auto; margin: 0; padding: 0; }

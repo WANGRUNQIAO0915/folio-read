@@ -66,8 +66,8 @@
     root.querySelectorAll('.caption').forEach(caption => {
       if (!caption.querySelector('.zh')?.textContent.trim()) caption.querySelector('.en')?.classList.add('original-primary');
     });
-    root.querySelectorAll('details').forEach(el => { el.open = true; });
     root.querySelectorAll('summary').forEach(el => el.remove());
+    root.querySelectorAll('details').forEach(el => el.replaceWith(...el.childNodes));
     root.querySelectorAll('[id]').forEach(el => { el.id = 'print-' + el.id; });
     root.querySelectorAll('a[href^="#"]').forEach(el => el.setAttribute('href', '#print-' + el.getAttribute('href').slice(1)));
     root.querySelectorAll('img').forEach(img => { img.loading = 'eager'; });

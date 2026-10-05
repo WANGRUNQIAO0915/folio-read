@@ -75,7 +75,7 @@ function prepare(mode) {return PR.prepareTranslationPrint(mode);}
     assert.match(snapshot.root.querySelector('#print-b-empty-caption .original-primary').textContent, /SOURCE_EMPTY_CAPTION/);
     assert.match(snapshot.root.querySelector('#print-b-missing .original-primary').textContent, /MISSING_TRANSLATION_SOURCE/);
     assert(snapshot.root.querySelector('#print-ref-1'));
-    assert.equal(snapshot.root.querySelectorAll('details:not([open]), summary').length, 0);
+    assert.equal(snapshot.root.querySelectorAll('details, summary').length, 0, 'No implicit browser disclosure heading in print');
     assert(snapshot.root.querySelectorAll('.katex').length >= 2);
     assert([...snapshot.root.querySelectorAll('img')].every(image => image.loading === 'eager'));
     assert.equal(d.querySelector('#paper').innerHTML, readerBefore, 'Preparing a print snapshot never edits the reading DOM');

@@ -110,9 +110,15 @@ def inspect_pdf(source: Path) -> None:
                                 if (r < 60 and 65 < g < 115 and 115 < b < 165)
                                 or (50 < r < 95 and 145 < g < 195 and 125 < b < 180)
                                 or (195 < r < 245 and 115 < g < 165 and b < 80))
+            # The portrait fixture has a white background above its label.
+            # Sampling the rendered page catches inherited dark-mode inversion.
+            original_backgrounds = [bitmap.getpixel((round((image["x0"] + image["x1"]) / 2),
+                                                      round(image["top"] + (image["bottom"] - image["top"]) / 10)))
+                                    for image in page.images if image["height"] > image["width"] * 1.1]
             pages.append({"width": page.width, "height": page.height, "chars": len(chars),
                           "images": len(page.images), "overflow": overflow, "image_overflow": image_overflow,
                           "nonwhite_pixels": nonwhite, "figure_pixels": figure_pixels,
+                          "original_backgrounds": original_backgrounds,
                           "corner": bitmap.getpixel((5, 5))})
     document.close()
     print(json.dumps({"pages": pages, "text": "\n".join(page.extract_text() or "" for page in reader.pages)}, ensure_ascii=False))
