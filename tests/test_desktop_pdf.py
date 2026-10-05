@@ -216,6 +216,7 @@ class NativeJobTests(unittest.TestCase):
         self.path = Path(self.directory.name) / 'native.pdf'
         self.window = MagicMock()
         self.window.events.closed.is_set.return_value = False
+        self.window.native.webview.DefaultBackgroundColor = (249, 249, 247)
         self.core = self.window.native.webview.CoreWebView2
         self.core.Source = 'http://127.0.0.1:8766/read/p-1234'
         self.core.ExecuteScriptAsync.return_value = DotNetTask('true')
@@ -223,6 +224,7 @@ class NativeJobTests(unittest.TestCase):
         self.window.native.BeginInvoke.side_effect = lambda callback: callback()
         modules = {
             'System': types.SimpleNamespace(Action=Delegate, Boolean=bool, String=str),
+            'System.Drawing': types.SimpleNamespace(Color=types.SimpleNamespace(White=(255, 255, 255))),
             'System.Threading.Tasks': types.SimpleNamespace(
                 Task=DotNetTask, TaskScheduler=types.SimpleNamespace(
                     FromCurrentSynchronizationContext=lambda: DotNetTask.scheduler)),
@@ -247,12 +249,33 @@ class NativeJobTests(unittest.TestCase):
         self.assertAlmostEqual(settings.PageWidth, 210 / 25.4)
         self.assertAlmostEqual(settings.PageHeight, 297 / 25.4)
 
+    def test_native_canvas_is_white_only_during_print_and_restored(self):
+        observed = []
+        def print_pdf(*_args):
+            observed.append(self.window.native.webview.DefaultBackgroundColor)
+            return DotNetTask(True)
+        self.core.PrintToPdfAsync.side_effect = print_pdf
+        job = self.job()
+        job.start()
+        job.wait()
+        self.assertEqual(observed, [(255, 255, 255)])
+        self.assertEqual(self.window.native.webview.DefaultBackgroundColor, (249, 249, 247))
+
+    def test_native_canvas_is_restored_if_preparation_fails(self):
+        self.core.ExecuteScriptAsync.side_effect = RuntimeError('script dispatch failed')
+        job = self.job()
+        job.start()
+        with self.assertRaisesRegex(RuntimeError, 'script dispatch failed'):
+            job.wait()
+        self.assertEqual(self.window.native.webview.DefaultBackgroundColor, (249, 249, 247))
+
     def test_native_false_is_not_success(self):
         self.core.PrintToPdfAsync.return_value = DotNetTask(False)
         job = self.job()
         job.start()
         with self.assertRaisesRegex(RuntimeError, '未能生成'):
             job.wait()
+        self.assertEqual(self.window.native.webview.DefaultBackgroundColor, (249, 249, 247))
 
     def test_rechecks_source_and_prepared_dom_on_native_thread(self):
         job = self.job()

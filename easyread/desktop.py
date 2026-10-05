@@ -417,7 +417,12 @@ def check_translation_pdf(window, home: Path, paper_id: str, checks: dict, wait_
                 page = document[0]
                 bitmap = page.render(scale=1.25)
                 try:
-                    bitmap.to_pil().save(output / (mode + '-first-page.png'))
+                    preview = bitmap.to_pil().convert('RGB')
+                    preview.save(output / (mode + '-first-page.png'))
+                    corners = ((5, 5), (preview.width - 6, 5),
+                               (5, preview.height - 6), (preview.width - 6, preview.height - 6))
+                    checks['native_pdf_' + mode + '_white_page_margins'] = all(
+                        preview.getpixel(point) == (255, 255, 255) for point in corners)
                 finally:
                     bitmap.close()
                     page.close()

@@ -71,6 +71,10 @@
     root.querySelectorAll('[id]').forEach(el => { el.id = 'print-' + el.id; });
     root.querySelectorAll('a[href^="#"]').forEach(el => el.setAttribute('href', '#print-' + el.getAttribute('href').slice(1)));
     root.querySelectorAll('img').forEach(img => { img.loading = 'eager'; });
+    // Keep numeric values intact while long labels/identifiers may wrap.
+    root.querySelectorAll('th, td').forEach(cell => {
+      if (/^[+−-]?\d+(?:[.,]\d+)*(?:[eE][+−-]?\d+)?(?:[%‰])?$/.test(cell.textContent.trim())) cell.style.whiteSpace = 'nowrap';
+    });
     const label = document.createElement('p'); label.className = 'print-edition';
     label.textContent = 'Folio Read · ' + (mode === 'bi' ? '逐段中英对照' : '中文译文') + ' · AI 译文，请核对原文';
     root.querySelector('.paper-head')?.append(label);

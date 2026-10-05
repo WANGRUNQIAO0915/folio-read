@@ -99,12 +99,20 @@ class _WebView2PdfJob:
         self._state_lock = threading.Lock()
         self._navigation_handler = None
         self._core = None
+        self._previous_background = None
 
     def start(self):
         from System import Action, Boolean, String
+        from System.Drawing import Color
         from System.Threading.Tasks import Task, TaskScheduler
 
         def finish(error=None):
+            if self._previous_background is not None:
+                try:
+                    self.window.native.webview.DefaultBackgroundColor = self._previous_background
+                except Exception:
+                    pass  # Disposing the window may precede native completion.
+                self._previous_background = None
             if self._navigation_handler is not None:
                 try:
                     self._core.NavigationStarting -= self._navigation_handler
@@ -140,6 +148,12 @@ class _WebView2PdfJob:
                 if str(core.Source) != self.expected_url:
                     raise RuntimeError('阅读页面已切换，请重新导出。')
                 scheduler = TaskScheduler.FromCurrentSynchronizationContext()
+                # pywebview uses the reader's cream window color as WebView2's
+                # native canvas color. PDF page margins can inherit that canvas
+                # even when print CSS makes the document white.
+                control = self.window.native.webview
+                self._previous_background = control.DefaultBackgroundColor
+                control.DefaultBackgroundColor = Color.White
 
                 def navigation_started(_sender, _args):
                     self.navigated = True

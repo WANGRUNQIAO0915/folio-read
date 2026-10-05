@@ -117,6 +117,8 @@ def inspect_pdf(source: Path) -> None:
                                     for image in page.images if image["height"] > image["width"] * 1.1]
             pages.append({"width": page.width, "height": page.height, "chars": len(chars),
                           "images": len(page.images), "overflow": overflow, "image_overflow": image_overflow,
+                          "table_decimals": [word["text"] for word in page.extract_words()
+                                             if word["text"] in ("0.25", "0.50")],
                           "nonwhite_pixels": nonwhite, "figure_pixels": figure_pixels,
                           "original_backgrounds": original_backgrounds,
                           "corner": bitmap.getpixel((5, 5))})

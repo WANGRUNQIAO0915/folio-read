@@ -43,6 +43,7 @@ function inspect(file, bilingual) {
   assert(result.pages.reduce((sum, item) => sum + item.images, 0) >= 3, 'Figure and original-page images are embedded in PDF');
   assert(result.pages.reduce((sum, item) => sum + item.figure_pixels, 0) > 1000, 'Embedded figure actually renders its colored pixels');
   assert(text.includes('300'), 'The wide mathematical equation is present in PDF text');
+  assert.deepEqual(result.pages.flatMap(item => item.table_decimals).sort(), ['0.25', '0.50'], 'Printed table decimals remain intact on one line');
   for (const [number, item] of result.pages.entries()) {
     assert(Math.abs(item.width - 595.28) < 2 && Math.abs(item.height - 841.89) < 2, 'A4 page ' + (number + 1));
     assert.deepEqual(item.overflow, [], 'Text outside printable margins on page ' + (number + 1));
@@ -72,6 +73,7 @@ async function printLayout(mode) {
       fontSize: getComputedStyle(root).fontSize, fonts: document.fonts.status, overflow,
       readyImages: [...root.querySelectorAll('img')].every(img => img.complete && img.naturalWidth > 0 && img.loading === 'eager'),
       imageFilters: [...root.querySelectorAll('img')].map(img => getComputedStyle(img).filter),
+      numericCells: [...root.querySelectorAll('td')].filter(cell => ['0.25', '0.50'].includes(cell.textContent.trim())).map(cell => getComputedStyle(cell).whiteSpace),
       pageBackground: getComputedStyle(document.documentElement).backgroundColor,
       pageColorScheme: getComputedStyle(document.documentElement).colorScheme,
       controls: root.querySelectorAll('button, aside, mark, .card, .inline-note, .figure-tools, .edited-dot').length,
@@ -87,6 +89,7 @@ async function printLayout(mode) {
   assert.equal(result.fontSize, '16px');
   assert.equal(result.fonts, 'loaded');
   assert.equal(result.readyImages, true);
+  assert.deepEqual(result.numericCells, ['nowrap', 'nowrap'], 'Numeric table values must not wrap between digits');
   assert(result.imageFilters.every(filter => filter === 'none'), 'Dark reader image filters are absent from print');
   assert.equal(result.pageBackground, 'rgb(255, 255, 255)');
   assert.equal(result.pageColorScheme, 'light');

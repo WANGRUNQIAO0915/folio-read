@@ -37,8 +37,8 @@
 #translationPrint .appendix-start { break-before: auto; }
 #translationPrint a { color: #222; }
 @page { size: A4; margin: 15mm; }
+:root:has(body.translation-print-active) { background: #fff !important; color-scheme: light !important; }
 @media print {
-  :root:has(body.translation-print-active) { background: #fff !important; color-scheme: light !important; }
   body.translation-print-active { background: #fff !important; margin: 0 !important; padding: 0 !important; }
   body.translation-print-active > *:not(#translationPrint) { display: none !important; }
   body.translation-print-active > #translationPrint { display: block !important; position: static; width: auto; margin: 0; padding: 0; }
