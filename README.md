@@ -8,7 +8,7 @@
 
 An open-source paper reader with translation, annotations, and personal-library Q&A.
 
-[![Windows 测试版 v1.1.0-dev7](https://img.shields.io/badge/Windows-v1.1.0--dev6-cc7d5e?logo=windows&logoColor=white)](https://github.com/WANGRUNQIAO0915/folio-read/releases/tag/v1.1.0-dev7)
+[![Windows 测试版 v1.1.0-dev7](https://img.shields.io/badge/Windows-v1.1.0--dev7-cc7d5e?logo=windows&logoColor=white)](https://github.com/WANGRUNQIAO0915/folio-read/releases/tag/v1.1.0-dev7)
 [![稳定版 v1.0.0](https://img.shields.io/badge/Stable-v1.0.0-6c7467)](https://github.com/WANGRUNQIAO0915/folio-read/releases/tag/v1.0.0)
 [![MIT](https://img.shields.io/badge/License-MIT-777777)](LICENSE)
 
