@@ -49,6 +49,7 @@ jobs:
           node tests/test_mobile_organization_drive.cjs
           node tests/test_mobile_organization_ui.cjs
           node tests/test_mobile_naming.cjs
+          node tests/test_translation_store.cjs
       - name: 启动服务，打开文献库页
         run: |
           cd "$RUNNER_TEMP"
@@ -80,6 +81,7 @@ jobs:
           python -m pip install .
           npm install --prefix "$RUNNER_TEMP/folio-playwright" --no-save --package-lock=false playwright@1.58.2 jsdom@26.1.0
           "$RUNNER_TEMP/folio-playwright/node_modules/.bin/playwright" install --with-deps chromium
+          sudo apt-get install -y fonts-noto-cjk
       - name: Chromium UI regression
         env:
           PLAYWRIGHT: ${{ runner.temp }}/folio-playwright/node_modules/playwright
@@ -103,6 +105,11 @@ jobs:
           PLAYWRIGHT: ${{ runner.temp }}/folio-playwright/node_modules/playwright
           BROWSER_ARTIFACTS: ${{ runner.temp }}/folio-browser-artifacts/naming
         run: node tests/test_naming_browser.cjs
+      - name: Translated PDF Chromium regression
+        env:
+          PLAYWRIGHT: ${{ runner.temp }}/folio-playwright/node_modules/playwright
+          BROWSER_ARTIFACTS: ${{ runner.temp }}/folio-browser-artifacts/translation-print
+        run: node tests/test_translation_print.cjs
       - name: Upload Chromium screenshots, traces, and logs
         if: always()
         uses: actions/upload-artifact@v4

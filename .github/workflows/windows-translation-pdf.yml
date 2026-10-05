@@ -1,0 +1,83 @@
+name: Windows translated PDF regression
+
+on:
+  pull_request:
+    paths:
+      - 'easyread/**'
+      - 'tests/**'
+      - 'scripts/build_windows.py'
+      - 'desktop_launcher.py'
+      - 'pyproject.toml'
+      - '.github/workflows/windows-translation-pdf.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'easyread/**'
+      - 'tests/**'
+      - 'scripts/build_windows.py'
+      - 'desktop_launcher.py'
+      - 'pyproject.toml'
+      - '.github/workflows/windows-translation-pdf.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packaged-webview2-pdf:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      PYTHONIOENCODING: utf-8
+      EASYREAD_LIBRARY: ${{ runner.temp }}/folio-pdf-unit-library
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install isolated Windows build dependencies
+        run: |
+          python -m venv .venv-pdf
+          .venv-pdf/Scripts/python.exe -m pip install ".[windows-build]"
+      - name: Portable bridge and application regressions
+        run: .venv-pdf/Scripts/python.exe -m unittest discover tests -v
+      - name: Build the actual portable EXE
+        run: .venv-pdf/Scripts/python.exe scripts/build_windows.py
+      - name: Prepare hosted runner display
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Write-Output "Display: $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)"
+      - name: Real WebView2 PDF export in the frozen EXE
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path dist/FolioRead.exe).Path
+          $dataDir = Join-Path $env:RUNNER_TEMP 'folio-pdf-native-smoke'
+          $report = Join-Path $env:RUNNER_TEMP 'folio-pdf-native-smoke.json'
+          New-Item -ItemType Directory -Force $dataDir | Out-Null
+          $env:EASYREAD_LIBRARY = Join-Path $dataDir 'library'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--data-dir', $dataDir, '--smoke-test', $report) -PassThru
+          if (-not $process.WaitForExit(360000)) {
+            Stop-Process -Id $process.Id -Force
+            throw 'Packaged native PDF smoke test timed out after 360 seconds.'
+          }
+          if (Test-Path $report) { Get-Content $report }
+          if ($process.ExitCode -ne 0) { throw "Packaged smoke exit code: $($process.ExitCode)" }
+          if (-not (Test-Path $report)) { throw 'Packaged smoke report missing.' }
+          $result = Get-Content $report -Raw | ConvertFrom-Json
+          if ($result.status -ne 'passed') { throw 'Native smoke checks did not all pass.' }
+          foreach ($check in @('native_pdf_bridge_exposed', 'native_pdf_zh_saved', 'native_pdf_bi_saved', 'native_pdf_retry_after_cancel', 'native_pdf_original_data_unchanged')) {
+            if ($result.checks.$check -ne $true) { throw "Native PDF check missing or failed: $check" }
+          }
+      - name: Upload synthetic PDFs, rendered previews, and smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-webview2-translated-pdf
+          path: |
+            ${{ runner.temp }}/folio-pdf-native-smoke.json
+            ${{ runner.temp }}/folio-pdf-native-smoke/easyread.log
+            ${{ runner.temp }}/folio-pdf-native-smoke/translation-pdf-smoke/
+          if-no-files-found: warn
+          retention-days: 14

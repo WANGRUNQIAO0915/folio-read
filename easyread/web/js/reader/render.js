@@ -212,13 +212,13 @@
     return '<div class="pending-pages"><div class="pending">' + head + "</div>" + miss.map(origFig).join("") + "</div>";
   }
 
-  PR.renderPaper = function () {
+  PR.paperHtml = function (forPrint = false) {
     buildIndex();
     let html = headHtml(), appendixSeen = false, lastPage = 0, refsSeen=false;
     const done = new Set((S.paper.translation || {}).done_pages || []);
     const allPages = (S.paper.meta || {}).pages || [];
     for (const b of S.paper.blocks || []) {
-      if (!R[b.type]) continue;
+      if (!R[b.type] || (forPrint && b.type === "note")) continue;
       if(b.type==='references'){if(refsSeen)continue;refsSeen=true;}
       if (b.page && b.page > lastPage + 1) {
         const gap = allPages.filter((p) => p.n > lastPage && p.n < b.page && !done.has(p.n));
@@ -231,7 +231,11 @@
       html += sectionHtml(b, extra, mark);
     }
     if(!refsSeen && (S.paper.references||[]).length)html+=sectionHtml({id:'folio-references',type:'references'},'',false);
-    PR.$("#paper").innerHTML = html + pendingHtml(lastPage);
+    return html + pendingHtml(lastPage);
+  };
+
+  PR.renderPaper = function () {
+    PR.$("#paper").innerHTML = PR.paperHtml();
     PR.emit("rendered");
   };
 
