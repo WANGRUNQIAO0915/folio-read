@@ -185,13 +185,21 @@ class DriveFolderImportTest(unittest.TestCase):
         self.assertEqual(count, 0); self.assertIn('另一 Google', errors[0]['error'])
         self.assertEqual(ws.load('reader')['_cloud']['account'], 'other-account')
 
-    def test_cache_is_account_scoped_and_deleted_local_copy_is_reimported(self):
-        self.import_files(); ws = self.lib.all()[0]; self.lib.trash(ws.id)
-        self.assertEqual(self.import_files(), (1, []))
+    def test_cache_is_account_scoped_and_deleted_copy_is_not_automatically_reimported(self):
+        self.import_files(); ws = self.lib.all()[0]; entry = self.lib.trash(ws.id)
+        self.assertEqual(self.import_files(), (0, []))
+        self.assertEqual(self.lib.all(), [])
+        self.lib.restore(entry.name)
         self.drive.account = {'permissionId': 'different'}
         count, errors = self.import_files()
         self.assertEqual(count, 0); self.assertEqual(len(errors), 1)
         self.assertFalse((self.home / '.drive-cache/different/folder-imports.json').exists())
+
+    def test_permanently_deleted_pdf_is_not_automatically_downloaded_again(self):
+        self.import_files(); ws = self.lib.all()[0]
+        entry = self.lib.trash(ws.id); self.lib.purge(entry.name)
+        self.assertEqual(self.import_files(), (0, []))
+        self.assertEqual(self.lib.all(), [])
 
     def test_cloud_existing_translation_is_pulled_instead_of_reparsed(self):
         remote = {'id': 'reading', 'appProperties': {'folioType': 'paper', 'folioPaperId': self.pid}}

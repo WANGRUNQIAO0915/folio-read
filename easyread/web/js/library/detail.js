@@ -84,7 +84,8 @@
       '<a class="btn line" href="/api/p/' + encodeURIComponent(i.id) + '/pdf" download title="' + PR.esc(i.pdf_filename || '') + '">' + PR.icon('download', 'sm') + '下载原 PDF</a>' +
       '<div class="act-row"><button class="btn line" data-d="cite" title="复制参考文献格式：GB/T 7714、APA、BibTeX">' + PR.icon("copy", "sm") + "复制引用</button>" +
       '<button class="btn icon line" data-d="star" title="星标（S）" style="color:' + (i.starred ? "#c9a24a" : "") + '">' + PR.icon("star", "sm").replace('class="i sm"', 'class="i sm"' + (i.starred ? ' style="fill:currentColor"' : "")) + "</button>" +
-      '<button class="btn icon line" data-d="more" title="更多：导出、打开文件夹、回收站">' + PR.icon("more", "sm") + "</button></div></div></div>" +
+      '<button class="btn icon line" data-d="more" title="更多：导出、打开文件夹">' + PR.icon("more", "sm") + '</button></div>' +
+      '<button class="btn line danger" data-d="delete">' + PR.icon('trash', 'sm') + '删除论文</button></div></div>' +
       '<div class="title-zh naming-display">' + PR.esc(i.display_title || i.title_zh || i.title_en || "（未命名）") + '</div>' +
       '<div class="naming-detail"><button class="btn sm line" data-name-paper="' + PR.esc(i.id) + '">' + PR.icon('edit', 'sm') + '中文命名</button>' +
       (i.naming?.source ? '<span class="hint">' + PR.esc(L.namingSourceLabel ? L.namingSourceLabel(i.naming.source) : i.naming.source) + '</span>' : '') + '</div>' +
@@ -142,6 +143,7 @@
       { label: "标题 + 链接 · 发给别人", icon: "link", fn: () => copy((i.title_zh ? i.title_zh + "（" + i.title_en + "）" : i.title_en) + "\n" + (i.url || ""), "标题和链接") },
     ]);
     else if (act === "more") PR.rowMenu(i.id, d);
+    else if (act === 'delete') L.deletePapers([i.id], d);
     else if (act === "cancel") { await PR.api("/api/p/" + i.id + "/cancel", { method: "POST", body: {} }); L.load(); }
     else if (act === "retry-failed") { await PR.api("/api/p/" + i.id + "/translate", { method: "POST", body: { failed: true } }); PR.toast("正在重试"); L.load(); }
     else if (act === "log") { const r = await PR.api("/api/p/" + i.id + "/log"); PR.showText("翻译记录", r.text); }
@@ -174,11 +176,7 @@
       { label: "打开所在文件夹", icon: "folder", fn: () => PR.api("/api/p/" + id + "/reveal", { method: "POST", body: {} }).catch((e) => PR.toast(PR.esc(e.message))) },
       { label: "全部重新翻译", icon: "redo", fn: () => retranslateAll(i) },
       { label: "翻译记录", icon: "log", fn: async () => { const r = await PR.api("/api/p/" + id + "/log"); PR.showText("翻译记录", r.text); } },
-      { label: "移到回收站", icon: "trash", fn: async () => {
-        if (!(await PR.confirm({ title: "移到回收站？", body: "《" + (i.title_zh || i.title_en) + "》会放进文献库的 .trash 目录，可以找回。", ok: "移到回收站", danger: true }))) return;
-        await PR.api("/api/p/" + id + "/delete", { method: "POST", body: {} });
-        L.select(null); L.load(); PR.toast("已移到回收站");
-      } },
+      { label: '删除论文 · 移到回收站', icon: 'trash', kbd: 'Delete', fn: () => L.deletePapers([id], where) },
     ]);
   };
 })(window.PR);

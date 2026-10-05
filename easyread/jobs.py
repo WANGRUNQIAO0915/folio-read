@@ -5,6 +5,7 @@ from __future__ import annotations
 import queue
 import threading
 import time
+import uuid
 
 from . import config, translate
 from .engines import Cancelled, EngineError
@@ -20,6 +21,7 @@ class Jobs:
         self.small: queue.Queue[dict] = queue.Queue()
         self.cancels: dict[str, threading.Event] = {}
         self.recent: list[dict] = []  # 小任务的状态，给页面轮询
+        self.small_activity = {}
         self.lock = threading.Lock()
         for target in (self._bulk_loop, self._small_loop):
             threading.Thread(target=target, daemon=True).start()
@@ -56,27 +58,32 @@ class Jobs:
     def _bulk_loop(self):
         while True:
             pid = self.bulk.get()
-            ws = self.lib.ws(pid)
-            if not ws:
-                continue
-            job = ws.load("job") or {}
-            if job.get("state") != "queued":
-                continue
-            cancel = self.cancels[pid] = threading.Event()
+            lease = self.lib.activity(pid)
             try:
-                self._run_bulk(ws, job, cancel)
-            except Cancelled:
-                self._write(ws, state="cancelled", message="已取消，已译的部分保留")
-            except Exception as e:  # noqa: BLE001
-                msg = str(e) if isinstance(e, (EngineError, KeyError, ValueError)) else f"{type(e).__name__}: {e}"
-                self._write(ws, state="error", message="出错了", error=msg[:800])
-                log.exception("后台任务出错 %s", pid)
+                ws = lease.__enter__()
+            except KeyError:
+                continue
+            try:
+                job = ws.load("job") or {}
+                if job.get("state") != "queued":
+                    continue
+                cancel = self.cancels[pid] = threading.Event()
                 try:
-                    translate.journal(ws, f"出错停止：{msg[:500]}")
-                except OSError:
-                    pass
+                    self._run_bulk(ws, job, cancel)
+                except Cancelled:
+                    self._write(ws, state="cancelled", message="已取消，已译的部分保留")
+                except Exception as e:  # noqa: BLE001
+                    msg = str(e) if isinstance(e, (EngineError, KeyError, ValueError)) else f"{type(e).__name__}: {e}"
+                    self._write(ws, state="error", message="出错了", error=msg[:800])
+                    log.exception("后台任务出错 %s", pid)
+                    try:
+                        translate.journal(ws, f"出错停止：{msg[:500]}")
+                    except OSError:
+                        pass
+                finally:
+                    self.cancels.pop(pid, None)
             finally:
-                self.cancels.pop(pid, None)
+                lease.__exit__(None, None, None)
 
     def _run_bulk(self, ws: Workspace, job: dict, cancel: threading.Event):
         cfg = config.load()
@@ -112,9 +119,12 @@ class Jobs:
 
     # ---------- 小任务 ----------
     def submit_small(self, kind: str, pid: str, **kw) -> dict:
-        job = {"id": f"j{int(time.time() * 1000)}", "kind": kind, "pid": pid, "state": "queued", "message": "排队中",
+        lease = self.lib.activity(pid)
+        lease.__enter__()
+        job = {"id": 'j' + uuid.uuid4().hex[:16], "kind": kind, "pid": pid, "state": "queued", "message": "排队中",
                "at": now_iso(), **kw}
         with self.lock:
+            self.small_activity[job['id']] = lease
             self.recent = ([job] + self.recent)[:50]
         self.small.put(job)
         return job
@@ -140,3 +150,8 @@ class Jobs:
             except Exception as e:  # noqa: BLE001
                 job["state"], job["message"] = "error", str(e)[:500]
                 log.exception("小任务出错 %s", job.get("kind"))
+            finally:
+                with self.lock:
+                    lease = self.small_activity.pop(job['id'], None)
+                if lease:
+                    lease.__exit__(None, None, None)

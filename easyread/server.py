@@ -6,6 +6,7 @@ import mimetypes
 import os
 import sys
 import threading
+from contextlib import nullcontext
 
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -169,7 +170,12 @@ class Handler(BaseHTTPRequestHandler):
         if not self._local_request():
             return
         try:
-            self._get()
+            parts = unquote(urlparse(self.path).path).split('/')
+            activity = self.app.lib.activity(parts[3]) if len(parts) > 4 and parts[1:3] == ['api', 'p'] else nullcontext()
+            with activity:
+                self._get()
+        except KeyError:
+            self._json(404, {'error': '论文已删除或不存在'})
         except Exception as e:  # noqa: BLE001
             log.exception("请求出错 %s", self.path)
             self._json(500, {"error": f"{type(e).__name__}: {e}"})
@@ -198,6 +204,8 @@ class Handler(BaseHTTPRequestHandler):
                                     "first_run": config.is_first_run(), "version": __version__})
         if path == "/api/config":
             return self._json(200, {"config": config.public(config.load()), "presets": config.PRESETS, "groups": config.PRESET_GROUPS})
+        if path == '/api/trash':
+            return self._json(200, {'items': lib.trash_list()})
         if path == '/api/drive':
             return self._json(200, app.drive.status())
         if path == '/api/easyscholar':
@@ -261,8 +269,8 @@ class Handler(BaseHTTPRequestHandler):
             if action == "state":
                 from .links import for_reader
                 ws.patch_item({"last_opened": now_iso()})
-                _warm(ws.root)
-                _warm_figures(ws)
+                _warm(ws.root, lib)
+                _warm_figures(ws, lib)
                 return self._json(200, {
                     **{n: ws.load(n) for n in ("paper", "discussion", "reader", "layout", "item", "job")},
                     "discussion": source_checks.for_reader(ws.load("discussion")),
@@ -307,7 +315,16 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             return self._json(403, {"error": "bad token"})
         try:
-            self._post()
+            path = unquote(urlparse(self.path).path)
+            parts = path.split('/')
+            if path.startswith('/api/p/') and len(parts) > 4 and parts[4] != 'delete':
+                activity = self.app.lib.activity(parts[3])
+            elif path in ('/api/naming/apply', '/api/classification/apply', '/api/easyscholar/lookup', '/api/import', '/api/import-url', '/api/import-arxiv'):
+                activity = self.app.lib.activity()
+            else:
+                activity = nullcontext()
+            with activity:
+                self._post()
         except sources.SourceError as e:
             self._json(400, {"error": str(e), "code": e.code})
         except (ValueError, KeyError) as e:
@@ -321,6 +338,15 @@ class Handler(BaseHTTPRequestHandler):
         path = unquote(url.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         app, lib = self.app, self.app.lib
+
+        if path.startswith('/api/trash/'):
+            body = json.loads(self._body() or b'{}')
+            if not isinstance(body, dict):
+                raise ValueError('请求必须是对象')
+            action = path[len('/api/trash/'):]
+            if action == 'purge' and body.get('confirm') is not True:
+                raise ValueError('永久删除需要确认')
+            return self._json(200, lib.trash_batch(action, body.get('ids')))
 
         if path.startswith('/api/naming/'):
             body = json.loads(self._body() or b'{}')
@@ -552,8 +578,7 @@ class Handler(BaseHTTPRequestHandler):
             if action == "retranslate":
                 return self._json(200, app.jobs.submit_small("retranslate", ws.id, key=body["key"], hint=body.get("hint", "")))
             if action == "delete":
-                app.jobs.cancel(ws.id)
-                return self._json(200, {"trash": str(lib.trash(ws.id))})
+                return self._json(200, {"trash": lib.trash(ws.id).name})
         return self._json(404, {"error": "not found"})
 
 
@@ -562,7 +587,7 @@ _figure_warming: set[str] = set()
 _figure_warm_lock = threading.Lock()
 
 
-def _warm_figures(ws) -> None:
+def _warm_figures(ws, lib=None) -> None:
     """为已有译文补上图片，后台运行；页面通过现有轮询自动更新。"""
     if not figures.pending(ws):
         return
@@ -574,7 +599,10 @@ def _warm_figures(ws) -> None:
 
     def run():
         try:
-            figures.ensure(ws)
+            with lib.activity(ws.id) if lib else nullcontext(ws) as current:
+                figures.ensure(current)
+        except KeyError:
+            pass  # deleted before this worker acquired its workspace
         except Exception:  # noqa: BLE001
             log.exception("生成正文配图失败 %s", ws.id)
         finally:
@@ -583,7 +611,7 @@ def _warm_figures(ws) -> None:
     threading.Thread(target=run, daemon=True).start()
 
 
-def _warm(root: Path) -> None:
+def _warm(root: Path, lib=None) -> None:
     """打开一篇论文时，后台生成原页面板用的小图（每篇只做一次）。"""
     if str(root) in _warming or (root / "pages" / f"w{pdfwork.PANEL_WIDTH}").exists() and \
             len(list((root / "pages" / f"w{pdfwork.PANEL_WIDTH}").glob("*.webp"))) >= len(list((root / "pages").glob("page-*.webp"))):
@@ -592,7 +620,10 @@ def _warm(root: Path) -> None:
 
     def run():
         try:
-            pdfwork.warm_variants(root)
+            with lib.activity(root.name) if lib else nullcontext() as current:
+                pdfwork.warm_variants(current.root if current else root)
+        except KeyError:
+            pass
         except Exception:  # noqa: BLE001
             log.exception("生成面板图失败 %s", root)
         finally:

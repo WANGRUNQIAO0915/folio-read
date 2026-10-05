@@ -38,8 +38,11 @@
 
       <span class="grow"></span>
       <button class="btn sm line" id="batchSelect">选择论文</button>
+      <button class="btn sm line" id="batchAll" hidden>全选当前列表</button>
       <button class="btn sm accent" id="organizeBtn" hidden>整理分类</button>
       <button class="btn sm line" id="namingBtn" hidden>中文命名</button>
+      <button class="btn sm line danger" id="batchDelete" hidden>删除所选</button>
+      <button class="btn sm line" id="trashOpen">回收站</button>
       <label class="sort">排序
         <select id="sort" class="input">
           <option value="opened">最近打开</option>
@@ -62,6 +65,7 @@
 <div class="dialog-backdrop" id="organizationDlg"><div class="dialog wide" role="dialog" aria-label="整理文献分类"></div></div>
 <div class="dialog-backdrop" id="namingDlg" aria-hidden="true" inert><div class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="namingHeading"></div></div>
 <div class="dialog-backdrop" id="textDlg"><div class="dialog wide" role="dialog"></div></div>
+<div class="dialog-backdrop" id="trashDlg" aria-hidden="true" inert><div class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="trashHeading"></div></div>
 <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
 <div id="toast" role="status"></div>
 
@@ -80,6 +84,7 @@
 <script src="/web/js/library/detail.js"></script>
 <script src="/web/js/library/organization.js"></script>
 <script src="/web/js/library/naming.js"></script>
+<script src="/web/js/library/trash.js"></script>
 <script src="/web/js/library/import.js"></script>
 <script src="/web/js/common/settings-models.js"></script>
 <script src="/web/js/common/settings.js"></script>
