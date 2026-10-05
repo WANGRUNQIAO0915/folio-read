@@ -196,6 +196,14 @@ class NativeScenario:
         self.report = report
         self.manager = None
         self.downloads, self.navigations, self.local_resources = [], [], []
+        self.native_clicks = []
+        # Keep synthetic evidence live so failures and the watchdog also retain it.
+        self.report.update(native_download_events=self.downloads,
+                           native_navigation_events=self.navigations,
+                           native_local_resource_events=self.local_resources,
+                           native_clicks=self.native_clicks,
+                           fixture_requests=self.fixture.requests,
+                           import_requests=self.imports)
         self.handlers = []  # Hold .NET event delegates alive for the full scenario.
 
     def check(self, name, condition, detail=None):
@@ -240,6 +248,32 @@ class NativeScenario:
         ImageGrab.grab(all_screens=True).save(path)
         self.report.setdefault('screenshots', []).append(path.name)
 
+    def diagnostics(self):
+        diagnostic = self.report.setdefault('failure_diagnostics', {})
+        diagnostic['fixture_requests'] = list(self.fixture.requests)
+        diagnostic['native_download_events'] = list(self.downloads)
+        diagnostic['native_navigation_events'] = list(self.navigations)
+        diagnostic['native_local_resource_events'] = list(self.local_resources)
+        if self.manager is None:
+            return
+        diagnostic['results'] = list(self.manager.results)
+        try:
+            diagnostic['native'] = self.ui(lambda: {
+                'status': str(self.manager.status.Text),
+                'source': str(self.manager.view.Source),
+                'form_disposed': bool(self.manager.form.IsDisposed),
+                'arm_enabled': bool(self.manager.arm_button.Enabled),
+                'active_download': str(self.manager.active.State) if self.manager.active is not None else None,
+            })
+        except Exception as error:
+            diagnostic['native_error'] = str(error)
+        try:
+            diagnostic['fixture_dom'] = self.js('({ready:document.readyState, location:location.href,'
+                'lastClick:window.__fixtureLastClick || null, focused:document.hasFocus(),'
+                'activation:{active:navigator.userActivation.isActive, ever:navigator.userActivation.hasBeenActive}})')
+        except Exception as error:
+            diagnostic['fixture_dom_error'] = str(error)
+
     def attach_observers(self):
         def download(_, args):
             self.downloads.append({'path': urlsplit(str(args.DownloadOperation.Uri)).path,
@@ -277,11 +311,82 @@ class NativeScenario:
             self.manager.folder.SelectedIndex = self.manager.folder_ids.index(folder_id)
         self.ui(select)
 
+    def click_fixture_link(self, link):
+        """Click with actual Windows mouse input, retaining browser user activation.
+
+        DOM .click()/ExecuteScriptAsync is untrusted and can trigger Chromium's
+        automatic-multiple-download permission, which production rightly denies.
+        Use JS only to locate a synthetic fixture link and observe its click.
+        """
+        import ctypes
+        from ctypes import wintypes
+        from System.Drawing import Point
+
+        def focus():
+            self.manager.form.Show()
+            self.manager.form.Activate()
+            self.manager.view.Focus()
+
+        self.ui(focus)
+        bounds = self.js('''(() => {
+            const link = document.getElementById(''' + json.dumps(link) + ''');
+            if (!link || new URL(link.href).origin !== location.origin)
+                throw new Error('Only a synthetic fixture link may be clicked');
+            link.scrollIntoView({block:'center', inline:'center'});
+            if (!window.__fixtureObservingClicks) {
+                document.addEventListener('click', event => {
+                    const target = event.target.closest('a');
+                    window.__fixtureLastClick = {id:target && target.id, trusted:event.isTrusted,
+                        activation:navigator.userActivation.isActive};
+                }, true);
+                window.__fixtureObservingClicks = true;
+            }
+            window.__fixtureLastClick = null;
+            const rect = link.getBoundingClientRect();
+            return {x:rect.x + rect.width/2, y:rect.y + rect.height/2,
+                width:rect.width, height:rect.height,
+                viewportWidth:innerWidth, viewportHeight:innerHeight, dpr:devicePixelRatio};
+        })()''')
+        if bounds['width'] <= 0 or bounds['height'] <= 0:
+            raise AssertionError(f'Fixture link is not visible: {link}')
+
+        def locate():
+            view = self.manager.view
+            # Ratios handle display DPI and WebView2 zoom without assuming that
+            # a CSS pixel is a physical desktop pixel.
+            x = round(bounds['x'] * view.ClientSize.Width / bounds['viewportWidth'])
+            y = round(bounds['y'] * view.ClientSize.Height / bounds['viewportHeight'])
+            screen = view.PointToScreen(Point(x, y))
+            return (int(screen.X), int(screen.Y), self.manager.form.Handle.ToInt64())
+
+        x, y, hwnd = self.ui(locate)
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+        user32.SetForegroundWindow.restype = wintypes.BOOL
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        user32.SetCursorPos.argtypes = [ctypes.c_int, ctypes.c_int]
+        user32.SetCursorPos.restype = wintypes.BOOL
+        user32.mouse_event.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.DWORD,
+                                       wintypes.DWORD, ctypes.c_size_t]
+        user32.mouse_event.restype = None
+        user32.SetForegroundWindow(hwnd)
+        wait_until(lambda: user32.GetForegroundWindow() == hwnd, 'fixture native foreground window', 5)
+        if not user32.SetCursorPos(x, y):
+            raise ctypes.WinError(ctypes.get_last_error())
+        self.native_clicks.append({'link': link, 'screen': [x, y], 'bounds': bounds})
+        time.sleep(0.05)
+        user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN
+        time.sleep(0.05)
+        user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP
+        clicked = wait_until(lambda: self.js('window.__fixtureLastClick'), f'trusted fixture click on {link}', 10)
+        self.native_clicks[-1]['event'] = clicked
+        self.check(f'{link}_trusted_native_click', clicked['id'] == link and clicked['trusted'] and clicked['activation'], clicked)
+
     def click(self, link, armed=True):
         before = len(self.downloads)
         if armed:
             self.ui(lambda: self.manager.arm_button.PerformClick())
-        self.js(f'document.getElementById({json.dumps(link)}).click(); true')
+        self.click_fixture_link(link)
         wait_until(lambda: len(self.downloads) > before, f'native DownloadStarting for {link}', 30)
         event = self.downloads[-1]
         self.check(f'{link}_native_download_event', event['handled'] and event['cancelled'] is not armed, event)
@@ -489,6 +594,10 @@ def main():
                     report['status'] = 'failed'
                     report['error'] = traceback.format_exc()
                     print(report['error'], file=sys.stderr, flush=True)
+                    try:
+                        scenario.diagnostics()
+                    except Exception:
+                        report['diagnostics_error'] = traceback.format_exc()
                     try:
                         scenario.screenshot('failure')
                     except Exception:

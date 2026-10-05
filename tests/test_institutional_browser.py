@@ -104,6 +104,14 @@ class InstitutionalBrowserTests(unittest.TestCase):
         self.assertIsNone(browser.safe_origin('http://127.0.0.1:45679/fixture.pdf', fixture))
         self.assertIsNone(browser.safe_origin('http://localhost:45678/fixture.pdf', fixture))
 
+    def test_attachment_navigation_abort_keeps_download_status(self):
+        self.manager.status.Text = '正在下载 PDF'
+        for error in ('ConnectionAborted', 'OperationCanceled'):
+            self.manager._navigated(None, SimpleNamespace(IsSuccess=False, WebErrorStatus=error))
+            self.assertEqual(self.manager.status.Text, '正在下载 PDF')
+        self.manager._navigated(None, SimpleNamespace(IsSuccess=False, WebErrorStatus='CertificateExpired'))
+        self.assertIn('证书错误不会被绕过', self.manager.status.Text)
+
     def test_official_origin_does_not_accept_lookalike_suffix(self):
         for origin in ('https://swjtu.edu.cn', 'https://inc.swjtu.edu.cn',
                        'https://sciencedirect.com', 'https://www.sciencedirect.com'):

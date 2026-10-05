@@ -212,6 +212,9 @@ class InstitutionalBrowser:
             self.status.Text = '已拦截自动弹窗。请点击网页上的登录或论文链接。'
 
     def _navigated(self, _, args):
+        # Attachment navigation is aborted when handed to the download manager.
+        if not args.IsSuccess and str(args.WebErrorStatus) in ('OperationCanceled', 'ConnectionAborted'):
+            return
         if not args.IsSuccess:
             self.status.Text = '页面未能加载。可后退或重试；证书错误不会被绕过。'
         elif not self.active:
