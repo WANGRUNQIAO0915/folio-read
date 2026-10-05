@@ -29,12 +29,14 @@ npm install --prefix /tmp/folio-playwright --no-save --package-lock=false playwr
 /tmp/folio-playwright/node_modules/.bin/playwright install --with-deps chromium
 # Linux 建议安装 fonts-noto-cjk，避免中文字体缺字。
 node tests/test_translation_store.cjs
+JSDOM=/tmp/folio-playwright/node_modules/jsdom node tests/test_translation_print_dom.cjs
 PLAYWRIGHT=/tmp/folio-playwright/node_modules/playwright node tests/test_translation_print.cjs
 ```
 
-Windows 可将 `/tmp/folio-playwright` 替换为临时目录，并通过 PowerShell 的 `$env:PLAYWRIGHT` 设置模块路径。已安装应用的 Python 可通过 `PYTHON` 指定，系统 Chromium 可通过 `CHROMIUM_EXECUTABLE` 指定。
+Windows 可将 `/tmp/folio-playwright` 替换为临时目录，并通过 PowerShell 的 `$env:PLAYWRIGHT` / `$env:JSDOM` 设置模块路径。已安装应用的 Python 可通过 `PYTHON` 指定，系统 Chromium 可通过 `CHROMIUM_EXECUTABLE` 指定。
 
 - `test_translation_store.cjs`：刷新时的持久化、并发保存和撤销覆盖。
+- `test_translation_print_dom.cjs`：真实渲染函数生成的导出 DOM、已存修改和空译文回退、字体和图片等待/超时、缺图回退、取消、错误、并发调用与清理。DOM 测试不声称验证分页或原生保存。
 - `test_translation_print.cjs`：真实 Chromium 生成中文、对照、离线 PDF；用 Python 解析多页文字与图像、检查 A4 页边界和空白页，并渲染每页 PNG 留作视觉检查。包含窄窗口、深色阅读偏好、宽公式/表格、缺译提示和失败恢复。原生桥接在此测试中模拟，不能替代 Windows 测试。
 - Windows 原生集成测试与工作流另行覆盖 WebView2 / `PrintToPdfAsync`。Windows EXE 发布前仍应人工检查文件对话框、取消、覆盖确认和生成文件。
 

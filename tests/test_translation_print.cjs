@@ -37,6 +37,8 @@ function inspect(file, bilingual) {
     assert.equal(text.includes(token), bilingual, 'Wrong language mode for ' + token);
   }
   assert(result.pages.reduce((sum, item) => sum + item.images, 0) >= 3, 'Figure and original-page images are embedded in PDF');
+  assert(result.pages.reduce((sum, item) => sum + item.figure_pixels, 0) > 1000, 'Embedded figure actually renders its colored pixels');
+  assert(text.includes('300'), 'The wide mathematical equation is present in PDF text');
   for (const [number, item] of result.pages.entries()) {
     assert(Math.abs(item.width - 595.28) < 2 && Math.abs(item.height - 841.89) < 2, 'A4 page ' + (number + 1));
     assert.deepEqual(item.overflow, [], 'Text outside printable margins on page ' + (number + 1));
@@ -180,6 +182,7 @@ async function capturePdf(name, mode) {
     assert.match(await page.locator('#paper').innerText(), /SAVED_PARAGRAPH/);
     // Deliberately stale reader: export must read this newer disk edit itself.
     state.reader.edits['p-edit'].zh = '保存后的中文段落 LATEST_DISK_PARAGRAPH';
+    state.reader.edits['p-edit'].at = '2026-02-01T00:00:00Z';
     await page.evaluate(() => {
       document.getElementById('margin').appendChild(Object.assign(document.createElement('p'), {textContent: 'SIDEBAR_SENTINEL'}));
       document.getElementById('readingTools').appendChild(Object.assign(document.createElement('button'), {textContent: 'CONTROL_SENTINEL'}));

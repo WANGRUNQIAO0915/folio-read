@@ -105,6 +105,10 @@ jobs:
           PLAYWRIGHT: ${{ runner.temp }}/folio-playwright/node_modules/playwright
           BROWSER_ARTIFACTS: ${{ runner.temp }}/folio-browser-artifacts/naming
         run: node tests/test_naming_browser.cjs
+      - name: Translated PDF DOM regression
+        env:
+          JSDOM: ${{ runner.temp }}/folio-playwright/node_modules/jsdom
+        run: node tests/test_translation_print_dom.cjs
       - name: Translated PDF Chromium regression
         env:
           PLAYWRIGHT: ${{ runner.temp }}/folio-playwright/node_modules/playwright

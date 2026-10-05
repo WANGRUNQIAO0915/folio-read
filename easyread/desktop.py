@@ -408,6 +408,7 @@ def check_translation_pdf(window, home: Path, paper_id: str, checks: dict, wait_
             checks['native_pdf_' + mode + '_reader_chrome_absent'] = not any(
                 label in compact for label in ('回到文献库', '导出译文PDF', '放大查看', '框选图片'))
             checks['native_pdf_' + mode + '_table'] = 'PDF_TABLE_SENTINEL' in text
+            checks['native_pdf_' + mode + '_figure'] = any(len(page.images) for page in pdf.pages)
             document = pypdfium2.PdfDocument(path)
             try:
                 page = document[0]
@@ -425,6 +426,10 @@ def check_translation_pdf(window, home: Path, paper_id: str, checks: dict, wait_
         window.evaluate_js("window.__nativePdfResult = null; void PR.exportTranslationPdf('zh').then(r => { window.__nativePdfResult = r; })")
         checks['native_pdf_cancelled_without_success'] = wait_for_ui(
             "window.__nativePdfResult?.status === 'cancelled' && !document.querySelector('#translationPrint')", 30)
+        exporter._choose_destination = lambda _filename: str(root / 'source.pdf')
+        window.evaluate_js("window.__nativePdfResult = null; void PR.exportTranslationPdf('zh').then(r => { window.__nativePdfResult = r; })")
+        checks['native_pdf_original_overwrite_rejected'] = wait_for_ui(
+            "window.__nativePdfResult?.status === 'error' && !document.querySelector('#translationPrint')", 30)
         exporter._choose_destination = lambda _filename: str(output / 'retry.pdf')
         window.evaluate_js("window.__nativePdfResult = null; void PR.exportTranslationPdf('zh').then(r => { window.__nativePdfResult = r; })")
         checks['native_pdf_retry_after_cancel'] = wait_for_ui(
