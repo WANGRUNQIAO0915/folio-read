@@ -105,6 +105,7 @@
     L.visibleIds = list.map(i => i.id);
     if (L.refreshOrganizationToolbar) L.refreshOrganizationToolbar();
     if (L.refreshNamingToolbar) L.refreshNamingToolbar();
+    if (L.refreshDeleteToolbar) L.refreshDeleteToolbar();
     const view = L.VIEWS.find((v) => v[0] === L.view) || L.VIEWS[0];
     PR.$("#viewTitle").textContent = L.folder !== undefined ? (L.folderLabel(L.folder) || "未分类") : L.tag ? "标签 · " + L.tag : view[1] + (L.view === "all" ? "论文" : "");
     PR.$("#count").textContent = L.searching ? "正在检索…" : list.length + " 篇";

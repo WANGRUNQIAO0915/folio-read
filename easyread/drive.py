@@ -334,6 +334,8 @@ class Drive:
                     revision = P.canonical({k: file.get(k) for k in ('version', 'modifiedTime', 'size', 'md5Checksum', 'sha256Checksum')})
                     cacheable = any(file.get(k) for k in ('version', 'modifiedTime', 'md5Checksum', 'sha256Checksum'))
                     prior = cache.get(file_id, {})
+                    if prior.get('paper_id') in self.lib.trashed_ids():
+                        continue
                     cached_ws = self._workspace_for_hash(prior.get('paper_id'))
                     if cacheable and prior.get('revision') == revision and cached_ws and (cached_ws.root / 'source.pdf').is_file():
                         if (cached_ws.load('reader').get('_cloud') or {}).get('account') not in (None, account_key):
@@ -345,6 +347,8 @@ class Drive:
                     if file.get('md5Checksum') and hashlib.md5(raw).hexdigest() != file['md5Checksum']:
                         raise ValueError('PDF 校验失败，请再次同步')
                     pid = hashlib.sha256(raw).hexdigest()
+                    if pid in self.lib.trashed_ids():
+                        continue
                     if file.get('sha256Checksum') and file['sha256Checksum'].lower() != pid:
                         raise ValueError('PDF 校验失败，请再次同步')
                     ws = self._workspace_for_hash(pid)
@@ -743,7 +747,7 @@ class Drive:
             except Exception as error:
                 errors.append(dict(name=(ws.load('paper').get('meta') or {}).get('title_en') or ws.id, error=str(error)[:200]))
         if self.cfg.get('sync_all', True):
-            known = {(w.load('paper').get('meta') or {}).get('source_sha256') or w.id for w in self.lib.all()}
+            known = {(w.load('paper').get('meta') or {}).get('source_sha256') or w.id for w in self.lib.all()} | self.lib.trashed_ids()
             for pid in sorted({f['appProperties']['folioPaperId'] for f in files if f.get('appProperties', {}).get('folioType') == 'paper'} - known):
                 try:
                     self.message = '正在接收另一设备上传的论文'
@@ -856,7 +860,8 @@ class Drive:
             self.busy = True; self.error = ''
         def work():
             try:
-                getattr(self, action)(*args)
+                with self.lib.activity():
+                    getattr(self, action)(*args)
             except Exception as e:
                 self.error = str(e)[:300]; self.message = '操作未完成'
             finally:

@@ -266,7 +266,11 @@ class Scholar:
                         results[ck] = self.query(name, force)
                     result = results[ck]
                     if visible_rank(meta) != result:
-                        ws.update('paper', lambda p: p.setdefault('meta', {}).update(journal_rank=result))
+                        try:
+                            with self.lib.activity(ws.id) as current:
+                                current.update('paper', lambda p: p.setdefault('meta', {}).update(journal_rank=result))
+                        except KeyError:
+                            continue
                         updated += 1
                 self.message = f'分区查询完成：更新 {updated} 篇，跳过 {skipped} 篇未填写期刊或预印本'
             except ValueError as exc:

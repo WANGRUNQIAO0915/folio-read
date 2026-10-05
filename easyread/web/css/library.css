@@ -339,3 +339,21 @@ body.resizing { cursor: col-resize; user-select: none; }
 .citation-preview { white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.8 var(--sans); padding: 14px; background: var(--surface-2); border-radius: 8px; user-select: text; }
 .citation-warning { color: var(--danger); font-size: 13px; }
 .citation-credit { font-size: 11px; }
+
+/* Recycle bin: titles stay readable even when a batch spans several topics. */
+#trashDlg .dialog { width: min(850px, 94vw); }
+.trash-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.trash-head h2 { margin: 0; }
+.trash-head .count { font: 13px var(--sans); color: var(--ink-3); margin-left: 8px; }
+.trash-search { display: grid; gap: 6px; margin: 18px 0 14px; font-size: 12px; color: var(--ink-2); }
+.trash-toolbar, .trash-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.trash-row { display: flex; align-items: flex-start; gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.trash-row > input { flex: none; margin-top: 5px; accent-color: var(--accent); }
+.trash-info { flex: 1; min-width: 0; }
+.trash-info h3 { margin: 0 0 7px; font: 500 14px/1.55 var(--sans); overflow-wrap: anywhere; }
+.trash-info p { margin: 0; color: var(--ink-3); font-size: 12px; line-height: 1.6; }
+.trash-error { color: var(--danger) !important; white-space: pre-wrap; font-size: 12px; overflow-wrap: anywhere; }
+.trash-error:empty { display: none; }
+.trash-empty { padding: 35px 0; text-align: center; color: var(--ink-3); font-size: 14px; }
+#trashDlg button:focus-visible, #trashDlg input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 600px) { .trash-row { flex-wrap: wrap; } .trash-actions { margin-left: 28px; } .trash-info { flex-basis: calc(100% - 40px); } }

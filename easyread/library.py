@@ -5,6 +5,9 @@ import hashlib
 import json
 import re
 import shutil
+import threading
+import uuid
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -21,15 +24,37 @@ class Library:
     def __init__(self, root: Path):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
+        self._lifecycle = threading.RLock()
+        self._active: dict[str | None, int] = {}
+
+    @contextmanager
+    def activity(self, pid: str | None = None):
+        """Keep a workspace in place until a request/background writer finishes."""
+        with self._lifecycle:
+            ws = self.ws(pid) if pid is not None else None
+            if pid is not None and ws is None:
+                raise KeyError('论文已删除或不存在')
+            if ws is not None:
+                pid = ws.id  # Windows identifiers may arrive with different casing.
+            self._active[pid] = self._active.get(pid, 0) + 1
+        try:
+            yield ws
+        finally:
+            with self._lifecycle:
+                self._active[pid] -= 1
+                if not self._active[pid]:
+                    del self._active[pid]
 
     def ws(self, pid: str) -> Workspace | None:
         if not re.fullmatch(r"[A-Za-z0-9_\-]{4,64}", pid or ""):
             return None
         p = self.root / pid
+        if p.resolve() != p or p.is_symlink():
+            return None
         return Workspace(p) if (p / "paper.json").exists() else None
 
     def all(self) -> list[Workspace]:
-        return [Workspace(p) for p in sorted(self.root.iterdir()) if p.is_dir() and not p.name.startswith(".") and (p / "paper.json").exists()]
+        return [ws for p in sorted(self.root.iterdir()) if not p.name.startswith('.') and (ws := self.ws(p.name))]
 
     # ---------- 列表摘要 ----------
     def summary(self, ws: Workspace, organization=None, naming_filenames=None) -> dict:
@@ -85,10 +110,11 @@ class Library:
 
     def list(self) -> list[dict]:
         from .organization import Organization
-        organization = Organization(self).load()
-        from .naming import library_filenames
-        filenames = library_filenames(self)
-        return [self.summary(ws, organization, filenames) for ws in self.all()]
+        with self._lifecycle:
+            organization = Organization(self).load()
+            from .naming import library_filenames
+            filenames = library_filenames(self)
+            return [self.summary(ws, organization, filenames) for ws in self.all()]
 
     # ---------- 导入 ----------
     def create_from_pdf(self, data: bytes, filename: str, meta: dict | None = None) -> tuple[Workspace, bool]:
@@ -121,13 +147,122 @@ class Library:
         return sources.fetch(ref)
 
     def trash(self, pid: str) -> Path:
-        ws = self.ws(pid)
-        if not ws:
-            raise KeyError(pid)
-        dest = self.root / ".trash" / f"{pid}-{datetime.now():%Y%m%d%H%M%S}"
-        dest.parent.mkdir(exist_ok=True)
-        shutil.move(str(ws.root), dest)
-        return dest
+        with self._lifecycle:
+            ws = self.ws(pid)
+            if not ws:
+                raise KeyError('论文已删除或不存在')
+            pid = ws.id
+            if self._active.get(pid) or self._active.get(None):
+                raise ValueError('论文正在处理或同步，请等当前操作结束后再删除')
+            if (ws.load('job') or {}).get('state') in ('queued', 'running'):
+                raise ValueError('论文正在排队或翻译，请先取消任务，等停止后再删除')
+            folder = self._trash_root()
+            folder.mkdir(exist_ok=True)
+            dest = folder / f'{pid}-{datetime.now():%Y%m%d%H%M%S}-{uuid.uuid4().hex[:8]}'
+            write_json_atomic(ws.root / '.trashed.json', {'paper_id': pid, 'deleted_at': now_iso()})
+            try:
+                ws.root.rename(dest)
+            except OSError:
+                (ws.root / '.trashed.json').unlink(missing_ok=True)
+                raise ValueError('论文文件仍被占用，请关闭原 PDF 或等待当前操作结束后再删除') from None
+            return dest
+
+    def _trash_root(self) -> Path:
+        folder = self.root / '.trash'
+        if folder.resolve() != folder or folder.is_symlink():
+            raise ValueError('回收站路径无效')
+        return folder
+
+    def _trash_entry(self, tid: str) -> tuple[Path, str, dict]:
+        if not isinstance(tid, str) or not re.fullmatch(r'[A-Za-z0-9_\-]{4,100}', tid):
+            raise ValueError('回收站条目标识无效')
+        folder = self._trash_root()
+        path = folder / tid
+        if path.resolve() != path or path.is_symlink() or not (path / 'paper.json').is_file():
+            raise ValueError('回收站条目不存在或路径无效')
+        marker = read_json(path / '.trashed.json', {})
+        legacy = re.fullmatch(r'([A-Za-z0-9_\-]{4,64})-(\d{14})(?:-[a-f0-9]{8})?', tid)
+        pid = marker.get('paper_id') or (legacy.group(1) if legacy else '')
+        if not re.fullmatch(r'[A-Za-z0-9_\-]{4,64}', pid):
+            raise ValueError('无法识别原论文目录')
+        at = marker.get('deleted_at') or (datetime.strptime(legacy.group(2), '%Y%m%d%H%M%S').astimezone().isoformat() if legacy else '')
+        return path, pid, {'deleted_at': at}
+
+    def trash_list(self) -> list[dict]:
+        from .naming import display_title
+        with self._lifecycle:
+            folder = self._trash_root()
+            if not folder.exists():
+                return []
+            rows = []
+            for entry in folder.iterdir():
+                try:
+                    path, pid, info = self._trash_entry(entry.name)
+                    paper = read_json(path / 'paper.json', {})
+                    item = read_json(path / 'item.json', {})
+                    meta = dict(paper.get('meta') or {})
+                    meta.update({k: v for k, v in (item.get('meta_override') or {}).items() if v})
+                    rows.append({'id': entry.name, 'paper_id': pid, **info,
+                                 'title': display_title(paper, item, pid), 'title_en': meta.get('title_en', ''),
+                                 'source_id': meta.get('source_sha256') or pid,
+                                 'done_pages': len((paper.get('translation') or {}).get('done_pages') or []),
+                                 'notes': sum(not n.get('deleted') for n in (read_json(path / 'reader.json', {}).get('notes') or {}).values()),
+                                 'can_restore': not (self.root / pid).exists()})
+                except (ValueError, OSError, TypeError, json.JSONDecodeError):
+                    continue
+            return sorted(rows, key=lambda row: row['deleted_at'], reverse=True)
+
+    def trashed_ids(self) -> set[str]:
+        with self._lifecycle:
+            removed = read_json(self.root / '.deleted.json', {'ids': []})
+            return set(removed.get('ids') or []) | {key for row in self.trash_list() for key in (row['paper_id'], row['source_id'])}
+
+    def restore(self, tid: str) -> str:
+        with self._lifecycle:
+            path, pid, _ = self._trash_entry(tid)
+            if (self.root / pid).exists():
+                raise ValueError('资料库已有同一篇论文，不能覆盖；请先处理现有副本')
+            if self._active.get(None):
+                raise ValueError('资料库正在同步或更新，请稍后恢复')
+            job = read_json(path / 'job.json', {})
+            if job.get('state') in ('queued', 'running'):
+                job.update(state='cancelled', message='已恢复，旧任务未自动重启，已保存译文保留', updated=now_iso())
+                write_json_atomic(path / 'job.json', job)
+            path.rename(self.root / pid)
+            (self.root / pid / '.trashed.json').unlink(missing_ok=True)
+            return pid
+
+    def purge(self, tid: str) -> None:
+        with self._lifecycle:
+            path, pid, _ = self._trash_entry(tid)
+            # The entire resolved target must be a direct child of our recycle bin.
+            # Reject links inside it as well, including Windows junctions.
+            pending = [path]
+            while pending:
+                for child in pending.pop().iterdir():
+                    if child.is_symlink() or child.resolve() != child or getattr(child, 'is_junction', lambda: False)():
+                        raise ValueError('回收站条目含链接，请先检查文件')
+                    if child.is_dir():
+                        pending.append(child)
+            # Remember local removal so background Drive sync cannot recreate it.
+            source_id = (read_json(path / 'paper.json', {}).get('meta') or {}).get('source_sha256') or pid
+            removed = read_json(self.root / '.deleted.json', {'ids': []})
+            write_json_atomic(self.root / '.deleted.json', {'ids': sorted(set(removed.get('ids') or []) | {pid, source_id})})
+            shutil.rmtree(path)
+
+    def trash_batch(self, action: str, ids: list[str]) -> dict:
+        if action not in ('delete', 'restore', 'purge'):
+            raise ValueError('未知回收站操作')
+        if not isinstance(ids, list) or not ids or len(ids) > 500 or any(not isinstance(i, str) for i in ids):
+            raise ValueError('请选择 1–500 篇论文')
+        results = []
+        for key in dict.fromkeys(ids):
+            try:
+                value = getattr(self, {'delete': 'trash', 'restore': 'restore', 'purge': 'purge'}[action])(key)
+                results.append({'id': key, 'ok': True, 'result': value.name if isinstance(value, Path) else value})
+            except (ValueError, KeyError, OSError) as error:
+                results.append({'id': key, 'ok': False, 'error': str(error)})
+        return {'results': results}
 
     def find_by_sha(self, digest: str) -> Workspace | None:
         return self.ws(digest[:12])

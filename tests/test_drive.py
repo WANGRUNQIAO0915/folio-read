@@ -92,6 +92,19 @@ class DriveTest(unittest.TestCase):
         self.assertEqual(len(result['_cloud']['pending']), 1)
         self.assertNotIn('_syncConflicts', result['notes']['n-1'])
 
+    def test_cloud_reading_copy_does_not_resurrect_local_deletion(self):
+        remote = dict(id='cloud1', appProperties=dict(folioType='paper', folioPaperId='a' * 64))
+        for purge in (False, True):
+            with self.subTest(purged=purge):
+                if not self.lib.all():
+                    self.lib.restore(self.lib.trash_list()[0]['id'])
+                entry = self.lib.trash(self.ws.id)
+                if purge:
+                    self.lib.purge(entry.name)
+                with patch.object(self.drive, 'identify'), patch.object(self.drive, 'list_files', return_value=[remote]), patch.object(self.drive, '_sync_organization', side_effect=lambda files, **kw: files), patch.object(self.drive, 'pull') as pull:
+                    self.drive.sync()
+                pull.assert_not_called()
+
     def test_python_matches_browser_protocol(self):
         node = shutil.which('node') or ('C:/Users/Administrator/nodejs/node-v22.23.2-win-x64/node.exe' if os.name == 'nt' else '')
         if not node or not Path(node).exists():
