@@ -25,9 +25,10 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function inspect(file, bilingual) {
-  const result = python('inspect', file), text = result.text.normalize('NFKC').replace(/\s+/g, '');
+  const result = python('inspect', file), text = result.text.normalize('NFKC').replace(/\u2eda/g, '页').replace(/\s+/g, '');
   // Chromium's Noto ToUnicode maps may use compatibility radicals (e.g. ⽂).
-  // Preserve the raw extraction for diagnosis and normalize only for comparison.
+  // U+2EDA is the visually identical simplified 页 radical and lacks an NFKC
+  // mapping. Preserve raw extraction and normalize only these glyph equivalents.
   fs.writeFileSync(file.replace(/\.pdf$/, '-inspection.json'), JSON.stringify(result, null, 2));
   assert(result.pages.length >= 3, 'The fixture must produce multiple real PDF pages');
   for (const token of ['保存后的中文段落', 'LATEST_DISK_PARAGRAPH', '保存后的列表', 'SAVED_LIST', 'SAVED_CAPTION',
