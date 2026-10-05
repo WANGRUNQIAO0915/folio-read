@@ -19,7 +19,7 @@
       '<div class="or">或者</div>' +
       '<label class="field"><span>链接、arXiv 编号、DOI 或论文标题</span><div class="inline"><input class="input" id="arxivRef" placeholder="2411.00640 · 10.18653/v1/N19-1423 · 论文网页链接 · 论文标题">' +
       '<button class="btn accent" id="arxivGo">导入</button></div></label>' +
-      '<p class="hint">请填写完整论文标题。自动导入需要可下载的 PDF；需登录或订阅时，可在浏览器下载后选择文件导入。</p>' +
+      '<p class="hint">请填写完整论文标题。自动导入需要可下载的 PDF；需登录或订阅时，可在浏览器下载后选择文件导入。Windows 独立窗口也可使用顶部“文件 → 机构访问并导入 PDF”，自行认证后下载。</p>' +
       '<p class="hint" id="importRefStatus" role="status" aria-live="polite"></p>' +
       '<div class="imp-opts"><label class="check"><input type="checkbox" id="autoTr"' + (p.auto && !off ? " checked" : "") + (off ? " disabled" : "") + ">导入后翻译</label>" +
       '<div class="seg" id="scopeSeg">' + SCOPES.map(([k, l]) => '<button data-scope="' + k + '" class="' + (p.scope === k ? "on" : "") + '">' + l + "</button>").join("") + "</div>" +

@@ -1,0 +1,59 @@
+name: Windows institutional PDF import
+
+# Synthetic, isolated WebView2 integration only. No release, signing, tag,
+# deployment, university account, or subscription publisher access is involved.
+on:
+  push:
+    branches: [feat/windows-institutional-pdf]
+  pull_request:
+    paths:
+      - 'easyread/institutional_*.py'
+      - 'easyread/desktop.py'
+      - 'easyread/server.py'
+      - 'easyread/library.py'
+      - 'easyread/organization.py'
+      - 'easyread/web/js/library/import.js'
+      - 'scripts/test_institutional_windows.py'
+      - 'tests/test_institutional*.py'
+      - 'pyproject.toml'
+      - '.github/workflows/institutional-windows.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: institutional-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  raw-webview2-fixture:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install application and native desktop dependencies
+        run: python -m pip install ".[desktop]"
+      - name: Portable institutional-import regression tests
+        run: python -m unittest discover -s tests -p 'test_institutional*.py' -v
+      - name: Prepare a visible hosted-runner desktop
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Write-Output "Native test display: $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)"
+      - name: Real raw WebView2 download, isolation, and lifecycle integration
+        run: python scripts/test_institutional_windows.py --artifacts "${{ runner.temp }}/institutional-windows-artifacts"
+      - name: Upload synthetic native test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: institutional-windows-webview2
+          path: ${{ runner.temp }}/institutional-windows-artifacts/
+          if-no-files-found: warn
+          retention-days: 14

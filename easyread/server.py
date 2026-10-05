@@ -438,10 +438,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.close_connection = True  # The rejected PDF body is intentionally unread.
                 raise
             data = self._body()
-            ws, fresh = lib.create_from_pdf(data, q.get("name", "paper.pdf"))
+            ws, fresh = organization.import_pdf(data, q.get("name", "paper.pdf"), fid)
             if fresh:
-                if fid:
-                    organization.assign([{"paper_id": ws.id, "folder_id": fid}])
                 app.jobs.enqueue(ws, translate_after=q.get("translate", "1") == "1", scope=q.get("scope"))
             return self._json(200, {"id": ws.id, "new": fresh})
         if path in ("/api/import-url", "/api/import-arxiv"):
