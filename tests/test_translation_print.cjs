@@ -42,7 +42,9 @@ function inspect(file, bilingual) {
   }
   assert(result.pages.reduce((sum, item) => sum + item.images, 0) >= 3, 'Figure and original-page images are embedded in PDF');
   assert(result.pages.reduce((sum, item) => sum + item.figure_pixels, 0) > 1000, 'Embedded figure actually renders its colored pixels');
-  assert(['x1', 'x24', '300'].every(token => text.includes(token)), 'Both ends and result of the wide equation remain in PDF text');
+  const equation = Array.from({length: 24}, (_, i) => 'x' + (i + 1)).join('+') + '=300';
+  assert(result.pages.some(item => item.wide_equation === equation),
+    'Every variable, subscript, operator and result remains in the rendered PDF equation');
   assert.deepEqual(result.pages.flatMap(item => item.table_decimals).sort(), ['0.25', '0.50'], 'Printed table decimals remain intact on one line');
   for (const [number, item] of result.pages.entries()) {
     assert(Math.abs(item.width - 595.28) < 2 && Math.abs(item.height - 841.89) < 2, 'A4 page ' + (number + 1));

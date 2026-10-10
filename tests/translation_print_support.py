@@ -118,12 +118,25 @@ def inspect_pdf(source: Path) -> None:
             original_backgrounds = [bitmap.getpixel((round((image["x0"] + image["x1"]) / 2),
                                                       round(image["top"] + (image["bottom"] - image["top"]) / 10)))
                                     for image in page.images if image["height"] > image["width"] * 1.1]
+            # PDF content-stream order can place a subscript after the next
+            # operator. For our single-row x_1 ... x_24 fixture, compare actual
+            # left-to-right glyph positions, not pypdf's reading-order guess.
+            math_chars = [char for char in chars if "KaTeX" in char["fontname"]]
+            variables = [char for char in math_chars if char["text"] == "x"]
+            wide_equation = ""
+            if len(variables) == 24:
+                top = min(char["top"] for char in variables) - 4
+                bottom = max(char["bottom"] for char in variables) + 4
+                row = sorted((char for char in math_chars if top <= char["top"] <= bottom),
+                             key=lambda char: (char["x0"], char["top"]))
+                wide_equation = "".join(char["text"] for char in row).replace(" ", "")
             pages.append({"width": page.width, "height": page.height, "chars": len(chars),
                           "images": len(page.images), "overflow": overflow, "image_overflow": image_overflow,
                           "table_decimals": [word["text"] for word in page.extract_words()
                                              if word["text"] in ("0.25", "0.50")],
                           "nonwhite_pixels": nonwhite, "figure_pixels": figure_pixels,
                           "original_backgrounds": original_backgrounds,
+                          "wide_equation": wide_equation,
                           "corner": bitmap.getpixel((5, 5))})
     document.close()
     print(json.dumps({"pages": pages, "text": "\n".join(page.extract_text() or "" for page in reader.pages)}, ensure_ascii=False))
