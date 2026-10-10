@@ -8,7 +8,7 @@
 
 An open-source paper reader with translation, annotations, and personal-library Q&A.
 
-[![Windows 测试版 v1.1.0-dev7](https://img.shields.io/badge/Windows-v1.1.0--dev7-cc7d5e?logo=windows&logoColor=white)](https://github.com/WANGRUNQIAO0915/folio-read/releases/tag/v1.1.0-dev7)
+[![Windows 测试版 v1.1.0-dev8](https://img.shields.io/badge/Windows-v1.1.0--dev8-cc7d5e?logo=windows&logoColor=white)](https://github.com/WANGRUNQIAO0915/folio-read/releases/tag/v1.1.0-dev8)
 [![稳定版 v1.0.0](https://img.shields.io/badge/Stable-v1.0.0-6c7467)](https://github.com/WANGRUNQIAO0915/folio-read/releases/tag/v1.0.0)
 [![MIT](https://img.shields.io/badge/License-MIT-777777)](LICENSE)
 
@@ -34,13 +34,13 @@ Folio Read 是面向论文阅读与个人文献管理的开源应用，集成 PD
 | 删除与回收站 | 单篇与批量删除、删除后撤销、恢复、搜索及永久删除；保留原始外部 PDF。[使用说明](docs/deleting-papers.md) |
 | 中文名称 | 单篇或批量设置中文显示名，并用于原 PDF 导出文件名；保留原题、原文件名与 PDF 内容。[使用说明](docs/chinese-pdf-names.md) |
 | 资料库问答 | 面向当前论文、全部收藏或指定分类提问，可纳入个人笔记；回答区分论文依据、个人笔记与 AI 的库外补充，并提供来源定位。 |
-| 研究与导出 | 比较 2–8 篇论文，保存研究主题、证据与待核实问题；导出 Markdown、Obsidian 笔记、RIS 和离线阅读文件。 |
+| 研究与导出 | 比较 2–8 篇论文，保存研究主题、证据与待核实问题；导出[译文 PDF](docs/translated-pdf.md)、Markdown、Obsidian 笔记、RIS 和离线阅读文件。 |
 | 云盘同步 | 通过 Google Drive 同步完整 PDF、正文、译文、批注及索引；支持经单独授权的云盘文件夹 PDF 自动导入。[同步说明](docs/mobile-sync.md) |
 | 期刊与引用 | easyScholar 期刊分区查询、正文参考文献预览，以及已有 DOI 的访问入口。[配置说明](docs/journal-and-citations.md) |
 
 以上功能以当前测试版为准。旧稳定版 v1.0.0 不包含文件夹、AI 分类、中文名称及手机云同步等后续新增功能。
 
-源码新增的译文 PDF 导出尚未发布到上述 dev7 安装包，使用说明见[译文 PDF 导出](docs/translated-pdf.md)。
+dev8 新增译文 PDF 导出，可保存中文译文或逐段中英对照，并沿用当前阅读排版。详见[使用说明](docs/translated-pdf.md)与[dev8 发布说明](docs/releases/v1.1.0-dev8.md)。
 
 ## 下载与安装
 
@@ -48,7 +48,7 @@ Folio Read 是面向论文阅读与个人文献管理的开源应用，集成 PD
 
 | 版本 | 定位 | 下载 |
 | --- | --- | --- |
-| **v1.1.0-dev7** | Windows x64 预发布测试版（未签名），包含下述修复及当前新增功能 | [便携 ZIP](https://github.com/WANGRUNQIAO0915/folio-read/releases/download/v1.1.0-dev7/FolioRead-Windows.zip) · [独立 EXE](https://github.com/WANGRUNQIAO0915/folio-read/releases/download/v1.1.0-dev7/FolioRead.exe) · [发布说明与校验](https://github.com/WANGRUNQIAO0915/folio-read/releases/tag/v1.1.0-dev7) |
+| **v1.1.0-dev8** | Windows x64 预发布测试版（未签名），新增沿用阅读排版的译文 PDF 导出 | [便携 ZIP](https://github.com/WANGRUNQIAO0915/folio-read/releases/download/v1.1.0-dev8/FolioRead-Windows.zip) · [独立 EXE](https://github.com/WANGRUNQIAO0915/folio-read/releases/download/v1.1.0-dev8/FolioRead.exe) · [发布说明与校验](https://github.com/WANGRUNQIAO0915/folio-read/releases/tag/v1.1.0-dev8) |
 | **v1.0.0** | 保留的旧稳定版 | [便携 ZIP](https://github.com/WANGRUNQIAO0915/folio-read/releases/download/v1.0.0/FolioRead-Windows.zip) · [发布说明](https://github.com/WANGRUNQIAO0915/folio-read/releases/tag/v1.0.0) |
 
 1. 下载便携 ZIP，解压到具有写入权限的文件夹。
@@ -57,13 +57,13 @@ Folio Read 是面向论文阅读与个人文献管理的开源应用，集成 PD
 
 桌面应用无需安装 Python，依赖 Microsoft WebView2 Runtime。缺少该组件时，可从[微软官方页面](https://developer.microsoft.com/microsoft-edge/webview2/)安装。
 
-升级前先通过「文件 → 打开数据文件夹」确认实际数据位置，再退出旧程序并备份整个数据目录。替换程序时保留原数据目录。测试包的应用内部版本为 `1.1.0.dev7`，本次主要修复参见[更新记录](CHANGELOG.md)。
+升级前先通过「文件 → 打开数据文件夹」确认实际数据位置，再退出旧程序并备份整个数据目录。替换程序时保留原数据目录。测试包的应用内部版本为 `1.1.0.dev8`，本次新增功能参见[更新记录](CHANGELOG.md)。
 
 ### 手机网页 / PWA
 
 使用手机浏览器打开[手机版](https://wangrunqiao0915.github.io/folio-read/mobile/)。iPhone 可通过 Safari 的分享菜单选择「添加到主屏幕」，独立导入 PDF、阅读、批注及检索资料库。
 
-手机版网站已部署当前共享移动端源码；功能范围与平台限制见下文。已安装的 PWA 收到更新提示后，关闭所有该站点页面并重新打开即可加载新资源。安装、模型配置与同步流程见[手机端文档](docs/mobile-sync.md)。
+手机版网站维持既有部署；本次 dev8 仅发布 Windows 包，不更新手机网页 / PWA，也不发布 Android APK。手机功能范围与平台限制见下文。已安装的 PWA 收到更新提示后，关闭所有该站点页面并重新打开即可加载新资源。安装、模型配置与同步流程见[手机端文档](docs/mobile-sync.md)。
 
 ## 使用指南
 
@@ -105,11 +105,22 @@ AI 分类每篇按需建议 0–4 个标签，不要求凑满四个；优先选�
 
 完整操作见[阅读工具与快捷键](docs/reading-tools.md)。
 
+### 导出译文 PDF
+
+阅读页顶栏选择「导出 PDF」，默认中文译文，也可选择「逐段中英对照」。Windows 桌面版通过 WebView2 直接保存；从源码运行的网页模式或单文件离线 HTML 使用浏览器打印窗口，请选择「另存为 PDF」。
+
+- 沿用当前阅读页实际使用的字体、字号、行距、字距、段距及图表公式样式。正文宽度能放入纸张时保留，超出可打印区域时才收窄。
+- 采用 A4 白底、15 mm 页边距，深色主题转为浅色印刷配色。分页及过宽内容适配可能改变换行、图表所在页和页码，不保证与阅读页或原 PDF 的版面一致。
+- 使用已有译文和最新修改，不调用模型。正在编辑的内容需先保存或取消；浏览器中尚未写入磁盘的修改会提示。缺译保留原文或原页，缺图尝试原页回退，仍缺失的内容会明确提示。
+- 保留可用图片、图注、公式、表格和参考文献；阅读笔记、AI 边注、划线和高亮不会写入导出文件。原 PDF 下载保持独立，导出不会改动原始 PDF。
+
+保存、取消、覆盖保护和详细限制见[译文 PDF 导出](docs/translated-pdf.md)。
+
 ## 数据与隐私
 
 - **本地存储**：文献、模型配置、标注、笔记和研究记录保存在本机。独立 EXE 通常在程序旁创建「FolioRead数据」；已有「Folio数据」「EasyRead数据」或 `easyread-personal` 目录时，会沿用现有数据。实际位置以应用内入口为准。
 - **云盘同步**：连接后，资料库通过用户自己的 Google Drive 同步。PDF 自动导入需单独授权；扫描范围、权限及容量说明见[同步文档](docs/mobile-sync.md)。
-- **模型调用**：翻译、问答和 AI 辅助操作会将相应任务材料发送至用户配置的服务。手动分类、本地名称建议与 PDF 自动导入不调用模型。
+- **模型调用**：翻译、问答和 AI 辅助操作会将相应任务材料发送至用户配置的服务。手动分类、本地名称建议、PDF 自动导入与译文 PDF 导出不调用模型。
 - **凭据管理**：本机 `config.json` 可能包含 API Key，不应提交到仓库或公开分享。手机 API Key 默认仅保存在当前页面内存中，选择保存后才写入本机存储；密钥不进入阅读备份或云同步。
 - **备份**：桌面端应备份整个实际数据目录。手机及 Android 的阅读 JSON 备份不包含原 PDF，需分别导出；清除网站数据或卸载应用前应完成备份。
 
@@ -117,7 +128,7 @@ AI 分类每篇按需建议 0–4 个标签，不要求凑满四个；优先选�
 
 | 平台 | 交付状态 | 验证与兼容性 |
 | --- | --- | --- |
-| Windows x64 | 提供 v1.1.0-dev7 便携测试包 | 每次发布由干净环境构建，并检查打包 EXE / WebView2；具体结果见发布附件，未做 Authenticode 代码签名。 |
+| Windows x64 | 提供 v1.1.0-dev8 便携测试包 | 每次发布由干净环境构建，并检查打包 EXE / WebView2；具体结果见发布附件，未做 Authenticode 代码签名。 |
 | 手机网页 / PWA | 已部署测试站，支持独立使用 | iPhone Safari 真机双向同步仍需验证；iOS 锁屏后不保证后台同步。 |
 | Android | 共享源码已整合当前功能，尚无对应的新 APK 发布 | 构建与 lint 已验证；模拟器运行、真机授权及升级安装验证未完成。构建与签名说明见 [Android 文档](android/README.md)。 |
 | macOS / Linux | 可从源码使用网页模式 | 桌面窗口体验尚未验证。 |
