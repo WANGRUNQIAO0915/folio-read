@@ -166,6 +166,34 @@
     if (changed.includes("paper")) { const ov = (S.item || {}).meta_override || {}; for (const [k, val] of Object.entries(ov)) if (val) S.paper.meta[k] = val; }
     PR.emit("remote", changed);
   }
+  // Export must observe edits from disk immediately, not wait for the next poll.
+  // Rebuild overlays the current outbox so an edit made during the read is retained.
+  PR.refreshForExport = async function () {
+    if (mode !== "server") return;
+    const pendingAtStart = outbox.slice();
+    await flush();
+    const response = await fetch(base() + "/state", { cache: "no-store" });
+    if (!response.ok) throw new Error("无法读取最新译文，请连接本地服务后重试");
+    const data = await response.json();
+    // A /state response can precede an in-flight save whose acknowledgement
+    // removes the outbox before this response arrives. Preserve both snapshots.
+    const current = S.reader, currentEdits = current.edits || {};
+    const currentOps = Object.values(current.notes || {}).map(note => ({ op: "note", note, at: note.updated }));
+    if (current.paper_note?.at) currentOps.push({ op: "paper_note", ...current.paper_note });
+    if (current.progress?.at) currentOps.push({ op: "progress", ...current.progress });
+    serverReader = applyOps(data.reader || {}, pendingAtStart.concat(currentOps));
+    for (const [block, edit] of Object.entries(currentEdits)) {
+      const remote = serverReader.edits[block];
+      if (!remote || (Date.parse(edit.at || '') || 0) >= (Date.parse(remote.at || '') || 0)) {
+        serverReader.edits[block] = JSON.parse(JSON.stringify(edit));
+      }
+    }
+    S.paper = data.paper; S.item = data.item || {}; S.job = data.job || {};
+    PR.token = data.token;
+    rebuildReader();
+    const overrides = S.item.meta_override || {};
+    for (const [key, value] of Object.entries(overrides)) if (value) S.paper.meta[key] = value;
+  };
   PR.poll = poll;
   PR.startPolling = function () {
     if (mode !== "server") return;

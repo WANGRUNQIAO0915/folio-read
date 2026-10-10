@@ -1,0 +1,43 @@
+/* Reuse reader.css for the paper; override only printing and privacy concerns. */
+.translation-export-dialog { max-width: 480px; padding: 24px; border: 1px solid #aaa; border-radius: 12px; }
+.translation-export-dialog::backdrop { background: #0006; }
+#translationPrint {
+  position: absolute; left: -100000px; top: 0; width: min(var(--print-reader-width, 180mm), 180mm);
+  --ink: #2d2d2b; --ink-2: #555552; --ink-3: #6d6d69; --bg: #fff; --surface: #fff; --rule: #e1e1dc; --rule-2: #cecec7; --accent: #a1593f; --accent-soft: rgba(204, 125, 94, .07);
+  color-scheme: light;
+  color: var(--ink); background: white;
+  font-family: var(--serif-zh); font-size: var(--fs); line-height: var(--lh);
+  letter-spacing: .012em; font-variant-numeric: lining-nums;
+  overflow-wrap: anywhere;
+}
+/* The reader's few ID-scoped type rules have no effect on the clean snapshot. */
+:root[data-theme="dark"] #translationPrint :is(h1, h2, h3, strong, th, .label) { font-weight: 600; }
+#translationPrint *, #translationPrint *::before, #translationPrint *::after { box-shadow: none; text-shadow: none; }
+#translationPrint h1, #translationPrint h2, #translationPrint h3 { break-after: avoid; page-break-after: avoid; }
+#translationPrint .blk-heading { break-after: avoid; page-break-after: avoid; }
+#translationPrint .blk::before { display: none; }
+#translationPrint .en, #translationPrint .en-title { display: none !important; }
+#translationPrint.mode-bi .en, #translationPrint.mode-bi .en-title, #translationPrint .original-primary { display: block !important; }
+#translationPrint p, #translationPrint .zh, #translationPrint .en, #translationPrint li { orphans: 3; widows: 3; }
+#translationPrint .print-edition, #translationPrint .print-warning { font: 12px/1.6 var(--ui); margin: 1em 0; }
+#translationPrint .print-warning { border: 1px solid var(--rule-2); padding: .6em; }
+#translationPrint .paper-information-body, #translationPrint .paper-source-links ul { max-height: none; overflow: visible; }
+#translationPrint .blk-figure, #translationPrint .math-row, #translationPrint .orig-page { break-inside: avoid; page-break-inside: avoid; }
+#translationPrint img { filter: none !important; max-width: 100%; height: auto; max-height: 220mm; object-fit: contain; }
+#translationPrint .orig-page img, #translationPrint img[data-original-fallback] { display: block; width: auto; margin: 0 auto; }
+#translationPrint .caption { break-before: avoid; }
+#translationPrint .math-body, #translationPrint .tbl-wrap { max-width: 100%; overflow: visible; }
+/* Measure the entire centered equation, including its left overflow, before
+   fitting it. A full-width block's scrollWidth only includes the right half. */
+#translationPrint .math-body > .katex-display { width: max-content; margin: 0 auto; }
+#translationPrint .print-fit-table { width: 100%; }
+#translationPrint .print-fit-table th, #translationPrint .print-fit-table td { overflow-wrap: anywhere; white-space: normal; }
+#translationPrint thead { display: table-header-group; }
+#translationPrint tr { break-inside: avoid; page-break-inside: avoid; }
+@page { size: A4; margin: 15mm; }
+:root:has(body.translation-print-active) { background: #fff !important; color-scheme: light !important; }
+@media print {
+  body.translation-print-active { background: #fff !important; margin: 0 !important; padding: 0 !important; }
+  body.translation-print-active > *:not(#translationPrint) { display: none !important; }
+  body.translation-print-active > #translationPrint { display: block !important; position: static; max-width: 100%; margin: 0 auto; padding: 0; }
+}

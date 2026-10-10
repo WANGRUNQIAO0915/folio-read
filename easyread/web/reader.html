@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="/web/css/workspace.css">
 <link rel="stylesheet" href="/web/css/reading-tools.css">
 <link rel="stylesheet" href="/web/css/reader-outline.css">
+<link rel="stylesheet" href="/web/css/translation-print.css">
 <script>try{var p=JSON.parse((localStorage.getItem("easyread-prefs")||localStorage.getItem("coread-prefs"))||"{}");var d=p.theme==="dark"||(p.theme!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.dataset.theme=d?"dark":"light"}catch(e){}</script>
 </head>
 <body class="reader-page">
@@ -38,6 +39,7 @@
   <button class="btn" data-act="notes" title="笔记面板（M）"></button>
   <button class="btn" data-act="chat" title="边读边问 AI（A）"></button>
   <button class="btn line server-only" id="studyBtn" title="打开或收起陪读栏">陪读</button>
+  <button class="btn" data-translation-export title="导出译文 PDF">导出 PDF</button>
   <button class="btn" data-act="settings" title="字号、版心、主题（=、- 调字号）">Aa</button>
   <button class="save-state" data-act="about" title="保存状态"><i></i><span>…</span></button>
 </header>
@@ -118,6 +120,7 @@
 <script src="/web/js/reader/jumpback.js"></script>
 <script src="/web/js/reader/keys.js"></script>
 <script src="/web/js/reader/export.js"></script>
+<script src="/web/js/reader/translation-print.js"></script>
 <script src="/web/js/common/chat-export.js"></script>
 <script src="/web/js/common/settings-models.js"></script>
 <script src="/web/js/common/settings.js"></script>

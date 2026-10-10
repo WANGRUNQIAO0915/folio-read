@@ -117,10 +117,15 @@ def app_icon():
 
 def create_window(home: Path, url: str, title: str = 'Folio Read · 阅读'):
     import webview
+    from .desktop_pdf import TranslationPdfExporter
+    from . import config
 
+    pdf_exporter = TranslationPdfExporter(url, Path(config.load()['library_dir']))
     webview.settings['ALLOW_DOWNLOADS'] = True
     window = webview.create_window(title, url, width=1280, height=880,
-                                  min_size=(760, 560), background_color='#f9f9f7')
+                                  min_size=(760, 560), background_color='#f9f9f7',
+                                  js_api=pdf_exporter)
+    pdf_exporter._bind_window(window)
     # Keep local PDFs in this window; deliberate external links use the browser.
     def local_links():
         if urlparse(window.get_current_url() or '').netloc != urlparse(url).netloc:
@@ -357,6 +362,96 @@ def check_pdf_naming(window, url: str, paper_id: str, checks: dict, wait_for_ui)
     checks['naming_reader_retains_original_details'] = window.evaluate_js('document.querySelector(".paper-head h1")?.textContent === ' + reviewed + ' && document.querySelector(".paper-information").textContent.includes("1-s2.0-standalone-test")')
 
 
+def check_translation_pdf(window, home: Path, paper_id: str, checks: dict, wait_for_ui):
+    """Exercise the JS bridge and real WebView2 printer, with synthetic save choices.
+
+    The OS chooser itself is configured/tested separately; unattended CI replaces
+    only that chooser, never the renderer or the JS-to-Python bridge.
+    """
+    from pypdf import PdfReader
+    import pypdfium2
+    import unicodedata
+
+    root = home / 'library' / paper_id
+    before = {name: (root / name).read_bytes() for name in ('source.pdf', 'paper.json')}
+    reader_before = json.loads((root / 'reader.json').read_text(encoding='utf-8'))
+    exporter = window._js_api
+    chooser = exporter._choose_destination
+    window.evaluate_js('''(() => {
+        window.__nativePdfConfirm = PR.confirm;
+        PR.confirm = async () => true;
+    })()''')
+    output = home / 'translation-pdf-smoke'
+    output.mkdir(exist_ok=True)
+    try:
+        checks['native_pdf_bridge_exposed'] = wait_for_ui(
+            "typeof window.pywebview?.api?.export_translation_pdf === 'function'", 10)
+        for mode in ('zh', 'bi'):
+            path = output / ('中文译文.pdf' if mode == 'zh' else '中英对照.pdf')
+            exporter._choose_destination = lambda _filename, path=path: str(path)
+            window.evaluate_js("window.__nativePdfResult = null; void PR.exportTranslationPdf(" +
+                               json.dumps(mode) + ").then(r => { window.__nativePdfResult = r; })")
+            completed = wait_for_ui('window.__nativePdfResult !== null', 90)
+            result = window.evaluate_js('window.__nativePdfResult') if completed else {}
+            checks['native_pdf_' + mode + '_saved'] = result.get('status') == 'saved' and path.is_file()
+            if not checks['native_pdf_' + mode + '_saved']:
+                raise RuntimeError('WebView2 译文 PDF 验证失败：' + str(result))
+            pdf = PdfReader(path)
+            # Some Chromium-embedded CJK fonts map glyphs to compatibility
+            # radicals. Normalize those equivalent codepoints for text checks.
+            text = unicodedata.normalize('NFKC', '\n'.join(page.extract_text() or '' for page in pdf.pages))
+            compact = ''.join(text.split())
+            checks['native_pdf_' + mode + '_multiple_a4_pages'] = len(pdf.pages) >= 2 and all(
+                abs(float(page.mediabox.width) - 595.28) < 2 and
+                abs(float(page.mediabox.height) - 841.89) < 2 for page in pdf.pages)
+            checks['native_pdf_' + mode + '_chinese_and_latest_edit'] = (
+                '用户最新修改中文译文导出检查' in compact and '查看补充材料' in compact and
+                'STALE_TRANSLATION_MUST_NOT_APPEAR' not in text)
+            checks['native_pdf_' + mode + '_mode'] = ('NATIVE_BILINGUAL_SENTINEL' in text) == (mode == 'bi')
+            checks['native_pdf_' + mode + '_reader_chrome_absent'] = not any(
+                label in compact for label in ('回到文献库', '导出译文PDF', '放大查看', '框选图片'))
+            checks['native_pdf_' + mode + '_table'] = 'PDF_TABLE_SENTINEL' in text
+            checks['native_pdf_' + mode + '_figure'] = any(len(page.images) for page in pdf.pages)
+            document = pypdfium2.PdfDocument(path)
+            try:
+                page = document[0]
+                bitmap = page.render(scale=1.25)
+                try:
+                    preview = bitmap.to_pil().convert('RGB')
+                    preview.save(output / (mode + '-first-page.png'))
+                    corners = ((5, 5), (preview.width - 6, 5),
+                               (5, preview.height - 6), (preview.width - 6, preview.height - 6))
+                    checks['native_pdf_' + mode + '_white_page_margins'] = all(
+                        preview.getpixel(point) == (255, 255, 255) for point in corners)
+                finally:
+                    bitmap.close()
+                    page.close()
+            finally:
+                document.close()
+            checks['native_pdf_' + mode + '_cleanup'] = window.evaluate_js(
+                "!document.querySelector('#translationPrint') && !document.body.classList.contains('translation-print-active')")
+        exporter._choose_destination = lambda _filename: None
+        window.evaluate_js("window.__nativePdfResult = null; void PR.exportTranslationPdf('zh').then(r => { window.__nativePdfResult = r; })")
+        checks['native_pdf_cancelled_without_success'] = wait_for_ui(
+            "window.__nativePdfResult?.status === 'cancelled' && !document.querySelector('#translationPrint')", 30)
+        exporter._choose_destination = lambda _filename: str(root / 'source.pdf')
+        window.evaluate_js("window.__nativePdfResult = null; void PR.exportTranslationPdf('zh').then(r => { window.__nativePdfResult = r; })")
+        checks['native_pdf_original_overwrite_rejected'] = wait_for_ui(
+            "window.__nativePdfResult?.status === 'error' && !document.querySelector('#translationPrint')", 30)
+        exporter._choose_destination = lambda _filename: str(output / 'retry.pdf')
+        window.evaluate_js("window.__nativePdfResult = null; void PR.exportTranslationPdf('zh').then(r => { window.__nativePdfResult = r; })")
+        checks['native_pdf_retry_after_cancel'] = wait_for_ui(
+            "window.__nativePdfResult?.status === 'saved' && !document.querySelector('#translationPrint')", 90)
+        reader_after = json.loads((root / 'reader.json').read_text(encoding='utf-8'))
+        checks['native_pdf_original_data_unchanged'] = (
+            all((root / name).read_bytes() == data for name, data in before.items()) and
+            all(reader_before.get(key) == reader_after.get(key) for key in ('edits', 'notes', 'paper_note')))
+        # Normal reader progress can autosave while the native export is running.
+    finally:
+        exporter._choose_destination = chooser
+        window.evaluate_js('PR.confirm = window.__nativePdfConfirm; delete window.__nativePdfConfirm')
+
+
 def check_window(home: Path, url: str, paper_id: str, checks: dict):
     """Exercise the actual WebView2 window in source and frozen builds."""
     window = create_window(home, url + '/read/' + paper_id, 'Folio Read · 桌面验证')
@@ -445,6 +540,7 @@ def check_window(home: Path, url: str, paper_id: str, checks: dict):
                 return !document.body.classList.contains('drawer-open') && document.querySelector('#drawer').inert &&
                     document.querySelector('[data-act=drawer]').getAttribute('aria-expanded') === 'false';
             })()''')
+            check_translation_pdf(window, home, paper_id, checks, wait_for_ui)
             check_reading_tools(window, home, paper_id, checks, wait_for_ui)
             deadline = time.monotonic() + 15
             while time.monotonic() < deadline:
@@ -701,6 +797,20 @@ def smoke_test(report: Path):
                                                       'en': 'Another passage for search verification.', 'zh': '第二条资料用于查找验证。'},
                                                      {'id':'phone-original','type':'para','page':1,'en':'Original PDF text imported on a phone.','zh':''}],
                                               translation={'done_pages': [1]}))
+        # More than one printed A4 page, without external fonts/images or AI.
+        ws.update('paper', lambda p: p['blocks'].extend([
+            {'id': 'native-pdf-edit', 'type': 'para', 'page': 1,
+             'en': 'NATIVE_BILINGUAL_SENTINEL', 'zh': 'STALE_TRANSLATION_MUST_NOT_APPEAR'},
+            {'id': 'native-pdf-table', 'type': 'table', 'page': 1,
+             'head': [['项目', '数值']], 'rows': [['PDF_TABLE_SENTINEL', '42']],
+             'caption_zh': '表 1：中文表格验证', 'caption_en': 'Table 1. PDF table test.'},
+            {'id': 'native-pdf-math', 'type': 'math', 'page': 1, 'tex': r'E = mc^2', 'tag': '1'},
+        ] + [{'id': 'native-pdf-' + str(i), 'type': 'para', 'page': 1,
+              'zh': '这是中文译文分页检查，包含标点、长段落与清晰的文字。' * 5,
+              'en': 'A translated paragraph for native pagination verification. ' * 5}
+             for i in range(20)]))
+        ws.update('reader', lambda r: r.setdefault('edits', {}).update({
+            'native-pdf-edit': {'zh': '用户最新修改中文译文导出检查', 'at': now_iso()}}))
         pdfwork.locate(ws.root)
         checks['automatic_figure_crop'] = figures.ensure(ws) == 1 and bool(next(b for b in ws.load('paper')['blocks'] if b['id']=='fig1').get('src'))
         checks['pdf_import'] = fresh

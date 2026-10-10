@@ -243,7 +243,7 @@
     return '<div class="about"><h3>译文</h3><p>' + ((tr.done_pages || []).length) + " / " + ((m.pages || []).length) + " 页。" + PR.esc(tr.note || "") + "</p>" +
       "<h3>保存</h3><p>" + status + "</p>" + (PR.store.pending ? "<p>还有 " + PR.store.pending + " 条修改在等待写入。</p>" : "") +
       '<div class="row">' + (pdf ? '<a class="btn sm line" href="' + pdf + '" target="_blank" rel="noopener">打开原 PDF</a>' : "") +
-      (PR.store.mode === 'server' ? '<a class="btn sm line" href="/api/p/' + encodeURIComponent(PR.pid) + '/pdf" download>按当前名称下载 PDF</a>' : '') +
+      (PR.store.mode === 'server' ? '<a class="btn sm line" href="/api/p/' + encodeURIComponent(PR.pid) + '/pdf" download>下载原 PDF（当前名称）</a>' : '') +
       '<button class="btn sm line" data-x="md">导出笔记…</button>' + (PR.store.mode === "static" && !S.demo ? '<button class="btn sm line" data-x="ops">导出我的修改</button>' : "") + "</div>" +
       "<h3>怎么用</h3><p>拖选文字，或双击选词，用 Ctrl+C 复制到其他软件；Ctrl+F 查找当前页面。常驻工具栏提供四色荧光笔、下划线、注记、撤销和快捷键说明，中文与对照英文都支持跨段标注。点一下段落出现操作条，右键打开完整菜单；改译文用按钮或 E。打开问 AI 时，选中的文字可以直接拖进输入框，一次引用多段。</p>" +
       "<h3>快捷键</h3>" + (PR.keysOn
