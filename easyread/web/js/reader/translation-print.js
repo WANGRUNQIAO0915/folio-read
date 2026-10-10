@@ -151,16 +151,25 @@
         if (available && child.scrollWidth > available && box.classList.contains('tbl-wrap')) {
           child.classList.add('print-fit-table');
         }
-        const width = child.scrollWidth;
-        if (available && width > available) {
+        // Fixed letter spacing/padding does not shrink with font size. Recheck
+        // the actual parent overflow rather than trusting one linear estimate.
+        for (let attempt = 0; available && attempt < 4; attempt++) {
+          const width = Math.max(child.scrollWidth, box.scrollWidth);
+          if (width <= available) break;
           const fontSize = parseFloat(getComputedStyle(child).fontSize);
-          child.style.fontSize = Math.max(8, fontSize * available / width) + 'px';
-          // Fixed padding or unusually long formulae may still exceed the page.
-          // Chromium/WebView2 zoom affects layout height too, unlike transform.
-          if (child.scrollWidth > available) {
-            const natural = child.scrollWidth;
-            child.style.width = natural + 'px';
-            child.style.zoom = String(available / natural);
+          if (fontSize <= 8) break;
+          child.style.fontSize = Math.max(8, fontSize * (available - 2) / width) + 'px';
+        }
+        if (available && Math.max(child.scrollWidth, box.scrollWidth) > available) {
+          // Very long content may need whole-box scaling, including its fixed
+          // spacing. Zoom also scales layout height, unlike transform.
+          child.style.width = Math.max(child.scrollWidth, box.scrollWidth) + 'px';
+          let zoom = 1;
+          for (let attempt = 0; attempt < 4; attempt++) {
+            const width = Math.max(box.scrollWidth, child.getBoundingClientRect().width);
+            if (width <= available) break;
+            zoom *= (available - 2) / width;
+            child.style.zoom = String(zoom);
           }
         }
       }

@@ -42,7 +42,7 @@ function inspect(file, bilingual) {
   }
   assert(result.pages.reduce((sum, item) => sum + item.images, 0) >= 3, 'Figure and original-page images are embedded in PDF');
   assert(result.pages.reduce((sum, item) => sum + item.figure_pixels, 0) > 1000, 'Embedded figure actually renders its colored pixels');
-  assert(text.includes('300'), 'The wide mathematical equation is present in PDF text');
+  assert(['x1', 'x24', '300'].every(token => text.includes(token)), 'Both ends and result of the wide equation remain in PDF text');
   assert.deepEqual(result.pages.flatMap(item => item.table_decimals).sort(), ['0.25', '0.50'], 'Printed table decimals remain intact on one line');
   for (const [number, item] of result.pages.entries()) {
     assert(Math.abs(item.width - 595.28) < 2 && Math.abs(item.height - 841.89) < 2, 'A4 page ' + (number + 1));
@@ -111,9 +111,11 @@ async function printLayout(mode) {
       en: getComputedStyle(root.querySelector('#print-b-p-edit .en')).display,
       fallback: getComputedStyle(root.querySelector('#print-b-missing .en')).display,
       math: root.querySelectorAll('.katex').length,
+      wideMathTex: root.querySelector('#print-b-wide-math annotation').textContent,
       hiddenReader: getComputedStyle(document.getElementById('stage')).display,
       preferences: {...PR.prefs}};
   }, expected);
+  fs.writeFileSync(path.join(ARTIFACTS, 'latest-layout-comparison.json'), JSON.stringify({expected, result}, null, 2));
   assert(result.classes.split(' ').includes('mode-' + mode));
   assert(!result.classes.split(' ').includes('zh'), 'Mode is separate from paragraph classes');
   assert.equal(result.color, 'rgb(45, 45, 43)');
@@ -134,6 +136,8 @@ async function printLayout(mode) {
   assert.equal(result.en, mode === 'bi' ? 'block' : 'none');
   assert.equal(result.fallback, 'block');
   assert(result.math >= 2, 'KaTeX equations are rendered');
+  assert.equal(result.wideMathTex, Array.from({length: 24}, (_, i) => 'x_{' + (i + 1) + '}').join(' + ') + ' = 300',
+    'Fitting changes only presentation, preserving the complete equation semantics');
   assert.equal(result.hiddenReader, 'none');
   assert.deepEqual(result.preferences, expected.preferences, 'Export does not change reading preferences or selected reader mode');
   assert.deepEqual(result.overflow, [], 'No horizontal overflow at print width: ' + JSON.stringify(result.overflow));
