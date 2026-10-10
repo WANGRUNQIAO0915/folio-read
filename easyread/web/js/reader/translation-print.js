@@ -1,4 +1,4 @@
-/* A disposable print snapshot, independent of reading preferences and annotations. */
+/* A clean print snapshot that keeps reader typography, without annotations. */
 (function (PR) {
   'use strict';
   let busy = false;
@@ -9,6 +9,31 @@
       timer = setTimeout(() => reject(new Error(message)), ms);
     })]).finally(() => clearTimeout(timer));
   };
+
+  function readerStyle(root) {
+    const reader = document.getElementById('paper');
+    if (!reader) return;
+    const style = getComputedStyle(reader);
+    for (const property of ['font-family', 'font-size', 'font-weight', 'font-style',
+      'letter-spacing', 'font-variant-numeric']) {
+      root.style.setProperty(property, style.getPropertyValue(property));
+    }
+    // Keep the unitless line height: an inherited pixel value changes captions
+    // and other smaller text. Capture the actual responsive size, not just prefs.
+    const size = parseFloat(style.fontSize), line = parseFloat(style.lineHeight);
+    if (size && line) root.style.lineHeight = String(line / size);
+    const width = reader.getBoundingClientRect().width;
+    if (width > 0) root.style.setProperty('--print-reader-width', width + 'px');
+    // These reader rules change at the narrow-window breakpoint. Freeze their
+    // screen values so print media cannot silently select a different layout.
+    const title = reader.querySelector('.paper-head h1');
+    if (title) root.querySelector('.paper-head h1').style.fontSize = getComputedStyle(title).fontSize;
+    const aligned = new Map([...reader.querySelectorAll('.zh[data-key]')]
+      .map(element => [element.dataset.key, getComputedStyle(element).textAlign]));
+    root.querySelectorAll('.zh[data-key]').forEach(element => {
+      if (aligned.has(element.dataset.key)) element.style.textAlign = aligned.get(element.dataset.key);
+    });
+  }
 
   PR.translationExportWarnings = function () {
     const paper = PR.state.paper, pages = paper.meta?.pages || [];
@@ -42,6 +67,7 @@
     root.id = 'translationPrint'; root.className = 'translation-print ' + mode;
     root.lang = 'zh-CN';
     root.innerHTML = PR.paperHtml(true);
+    readerStyle(root);
     // Remove reader-only controls; keep the contents of figure buttons.
     root.querySelectorAll('.figure-image').forEach(button => button.replaceWith(...button.childNodes));
     const originalFor = element => {
@@ -67,7 +93,11 @@
       if (!caption.querySelector('.zh')?.textContent.trim()) caption.querySelector('.en')?.classList.add('original-primary');
     });
     root.querySelectorAll('summary').forEach(el => el.remove());
-    root.querySelectorAll('details').forEach(el => el.replaceWith(...el.childNodes));
+    root.querySelectorAll('details').forEach(el => {
+      // Keep the reader's information/source-link styling without a disclosure.
+      const content = document.createElement('div'); content.className = el.className;
+      content.append(...el.childNodes); el.replaceWith(content);
+    });
     root.querySelectorAll('[id]').forEach(el => { el.id = 'print-' + el.id; });
     root.querySelectorAll('a[href^="#"]').forEach(el => el.setAttribute('href', '#print-' + el.getAttribute('href').slice(1)));
     root.querySelectorAll('img').forEach(img => { img.loading = 'eager'; });
@@ -84,6 +114,11 @@
       root.querySelector('.paper-head')?.append(p);
     }
     document.body.append(root);
+    // Newly refreshed blocks may not exist in the visible reader yet. Capture
+    // their screen alignment too, before the printer changes media breakpoints.
+    root.querySelectorAll('.zh').forEach(element => {
+      if (!element.style.textAlign) element.style.textAlign = getComputedStyle(element).textAlign;
+    });
     root.getBoundingClientRect(); // Trigger font discovery before awaiting fonts.ready.
     try {
       await bounded(document.fonts.ready, 15000, '字体加载超时，请重试');
@@ -106,12 +141,17 @@
         }
       })), 30000, '图片加载超时，请重试');
       if (fallbackImages) warnings.push(fallbackImages + ' 张插图使用所在原文页代替截图。');
-      // Fixed printable width makes sizing independent of window size/reader font.
+      // Use the reader's fit first. Only content that still exceeds the paper
+      // needs extra wrapping/scaling; ordinary tables retain their three rules.
+      PR.fitWide(root);
       for (const box of root.querySelectorAll('.math-body, .tbl-wrap')) {
         const child = box.firstElementChild;
         if (!child) continue;
-        child.style.fontSize = '';
-        const width = child.scrollWidth, available = box.clientWidth;
+        const available = box.clientWidth;
+        if (available && child.scrollWidth > available && box.classList.contains('tbl-wrap')) {
+          child.classList.add('print-fit-table');
+        }
+        const width = child.scrollWidth;
         if (available && width > available) {
           const fontSize = parseFloat(getComputedStyle(child).fontSize);
           child.style.fontSize = Math.max(8, fontSize * available / width) + 'px';
@@ -172,7 +212,8 @@
     if (busy || document.querySelector('.translation-export-dialog')) return;
     const dialog = document.createElement('dialog'); dialog.className = 'translation-export-dialog';
     dialog.innerHTML = '<form method="dialog"><h2>导出译文 PDF</h2>' +
-      '<p>使用已有译文和最新修改，保留可用图表与公式。</p>' +
+      '<p>使用已有译文和最新修改，沿用当前阅读字体、字号、行距与版心，保留图表和公式样式。</p>' +
+      '<p>A4 白底分页；过宽内容会适配纸张，换行和页码可能与阅读页不同。</p>' +
       '<p><label><input type="radio" name="mode" value="zh" checked> 中文译文</label></p>' +
       '<p><label><input type="radio" name="mode" value="bi"> 逐段中英对照</label></p>' +
       '<p>Windows 桌面版直接保存 PDF；网页或离线 HTML 请在打印窗口选择“另存为 PDF”。</p>' +

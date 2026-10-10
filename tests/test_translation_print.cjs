@@ -61,8 +61,31 @@ async function clean(label) {
   assert.equal(await page.locator('[data-translation-export]').isDisabled(), false, label + ': export re-enabled');
 }
 
+async function readerLayout() {
+  return page.evaluate(async () => {
+    await document.fonts.ready;
+    PR.fitWide();
+    const properties = ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing',
+      'textAlign', 'marginTop', 'marginBottom', 'paddingLeft', 'paddingRight',
+      'borderTopWidth', 'borderBottomWidth'];
+    const selectors = ['.paper-head h1', '.paper-information .title-en', '.paper-information .byline',
+      '#b-intro', '#b-intro .zh', '#b-p-edit .zh', '#b-list li', '#b-fig .caption', '#b-math .math-row', '#b-math .katex',
+      '#b-regular-table table', '#b-regular-table th', '#b-regular-table td', '#b-refs .refs'];
+    const paper = document.getElementById('paper'), style = getComputedStyle(paper);
+    return {width: paper.getBoundingClientRect().width,
+      type: Object.fromEntries(['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing']
+        .map(property => [property, style[property]])),
+      elements: Object.fromEntries(selectors.map(selector => {
+        const style = getComputedStyle(paper.querySelector(selector));
+        return [selector, Object.fromEntries(properties.map(property => [property, style[property]]))];
+      })), properties, preferences: {...PR.prefs},
+      blockOrder: [...paper.querySelectorAll('section.blk:not(.blk-note)')].map(element => element.dataset.id)};
+  });
+}
+
 async function printLayout(mode) {
-  const result = await page.evaluate(() => {
+  const expected = await page.evaluate(() => window.__readerLayout);
+  const result = await page.evaluate(expected => {
     const root = document.getElementById('translationPrint'), rect = root.getBoundingClientRect();
     const overflow = [...root.querySelectorAll('.zh, .original-primary, table, .math-body, img')].filter(element => {
       if (!element.getClientRects().length) return false;
@@ -70,7 +93,14 @@ async function printLayout(mode) {
       return box.left < rect.left - 2 || box.right > rect.right + 2 || element.scrollWidth > element.clientWidth + 2;
     }).map(element => ({class: element.className, width: element.clientWidth, scroll: element.scrollWidth}));
     return {classes: root.className, color: getComputedStyle(root).color, background: getComputedStyle(root).backgroundColor,
-      fontSize: getComputedStyle(root).fontSize, fonts: document.fonts.status, overflow,
+      type: Object.fromEntries(Object.keys(expected.type).map(property => [property, getComputedStyle(root)[property]])),
+      width: rect.width, fonts: document.fonts.status, overflow,
+      elements: Object.fromEntries(Object.keys(expected.elements).map(selector => {
+        const style = getComputedStyle(root.querySelector(selector.replaceAll('#b-', '#print-b-')));
+        return [selector, Object.fromEntries(expected.properties.map(property => [property, style[property]]))];
+      })),
+      regularTableWrapped: root.querySelector('#print-b-regular-table table').classList.contains('print-fit-table'),
+      blockOrder: [...root.querySelectorAll('section.blk')].map(element => element.dataset.id),
       readyImages: [...root.querySelectorAll('img')].every(img => img.complete && img.naturalWidth > 0 && img.loading === 'eager'),
       imageFilters: [...root.querySelectorAll('img')].map(img => getComputedStyle(img).filter),
       numericCells: [...root.querySelectorAll('td')].filter(cell => ['0.25', '0.50'].includes(cell.textContent.trim())).map(cell => getComputedStyle(cell).whiteSpace),
@@ -81,12 +111,17 @@ async function printLayout(mode) {
       fallback: getComputedStyle(root.querySelector('#print-b-missing .en')).display,
       math: root.querySelectorAll('.katex').length,
       hiddenReader: getComputedStyle(document.getElementById('stage')).display,
-      preferences: {theme: PR.prefs.theme, mode: PR.prefs.mode, fs: PR.prefs.fs}};
-  });
+      preferences: {...PR.prefs}};
+  }, expected);
   assert(result.classes.includes(mode));
-  assert.equal(result.color, 'rgb(17, 17, 17)');
+  assert.equal(result.color, 'rgb(45, 45, 43)');
   assert.equal(result.background, 'rgb(255, 255, 255)');
-  assert.equal(result.fontSize, '16px');
+  assert.deepEqual(result.type, expected.type, 'Export keeps actual reader typography, including responsive font size');
+  assert.deepEqual(result.elements, expected.elements, 'Normal headings, paragraphs, captions, math spacing and three-line tables keep reader styling');
+  assert.equal(result.regularTableWrapped, false, 'An ordinary table is not restyled to fit');
+  assert.deepEqual(result.blockOrder, expected.blockOrder, 'Figures, tables and formulas keep their position in the content sequence');
+  assert(Math.abs(result.width - Math.min(expected.width, 180 * 96 / 25.4)) < 1,
+    'Reader content width is kept when it fits, otherwise capped at the printable page width');
   assert.equal(result.fonts, 'loaded');
   assert.equal(result.readyImages, true);
   assert.deepEqual(result.numericCells, ['nowrap', 'nowrap'], 'Numeric table values must not wrap between digits');
@@ -98,12 +133,14 @@ async function printLayout(mode) {
   assert.equal(result.fallback, 'block');
   assert(result.math >= 2, 'KaTeX equations are rendered');
   assert.equal(result.hiddenReader, 'none');
-  assert.deepEqual(result.preferences, {theme: 'dark', mode: 'bi', fs: 28});
+  assert.deepEqual(result.preferences, expected.preferences, 'Export does not change reading preferences or selected reader mode');
   assert.deepEqual(result.overflow, [], 'No horizontal overflow at print width: ' + JSON.stringify(result.overflow));
   return result;
 }
 
 async function capturePdf(name, mode) {
+  const expected = await readerLayout();
+  await page.evaluate(expected => {window.__readerLayout = expected;}, expected);
   const readsBefore = stateReads;
   await page.evaluate(mode => {
     window.__bridgeCall = null;
@@ -217,6 +254,15 @@ async function capturePdf(name, mode) {
     await page.setViewportSize({width: 720, height: 850});
     reports.bilingual = await capturePdf('translated-bilingual', 'bi');
     assert(reports.bilingual.pages > reports.chinese.pages, 'Bilingual export has the full additional source text');
+    // Default desktop measure fits on A4 without widening or resetting its type.
+    await page.setViewportSize({width: 1365, height: 900});
+    await page.evaluate(() => {Object.assign(PR.prefs, {theme: 'light', font: 'serif', mode: 'zh', fs: 18, measure: 35, lh: 1.9}); PR.applyPrefs();});
+    await page.screenshot({path: path.join(ARTIFACTS, 'reader-default-serif.png')});
+    reports.defaultSerif = await capturePdf('translated-default-serif', 'zh');
+    // A narrower sans-serif reader stays narrow, while export mode remains the
+    // user's explicit choice even when the current reader only shows Chinese.
+    await page.evaluate(() => {Object.assign(PR.prefs, {font: 'sans', fs: 16, measure: 26, lh: 1.5}); PR.applyPrefs();});
+    reports.narrowSans = await capturePdf('translated-narrow-sans', 'bi');
     // Browser fallback must not claim success; window.print can be cancelled.
     const fallback = await page.evaluate(async () => {
       delete window.pywebview;
@@ -258,6 +304,8 @@ async function capturePdf(name, mode) {
     await page.goto(pathToFileURL(files.offline).href);
     await page.locator('#b-p-edit').waitFor();
     assert.equal(await page.evaluate(() => PR.store.mode), 'static');
+    const expectedOffline = await readerLayout();
+    await page.evaluate(expected => {window.__readerLayout = expected;}, expectedOffline);
     await page.evaluate(async () => {await PR.prepareTranslationPrint(); document.body.classList.add('translation-print-active');});
     await page.emulateMedia({media: 'print'});
     await printLayout('zh');

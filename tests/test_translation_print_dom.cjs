@@ -60,10 +60,24 @@ function prepare(mode) {return PR.prepareTranslationPrint(mode);}
   try {
     await PR.load();
     PR.renderPaper();
+    const paper = d.querySelector('#paper');
+    Object.assign(paper.style, {fontFamily: 'Reader Serif', fontSize: '21px', fontWeight: '500',
+      lineHeight: '46.2px', letterSpacing: '0.252px', fontVariantNumeric: 'lining-nums'});
+    paper.getBoundingClientRect = () => ({width: 512});
+    paper.querySelector('h1').style.fontSize = '31.5px';
+    paper.querySelector('#b-p-edit .zh').style.textAlign = 'justify';
     const readerBefore = d.querySelector('#paper').innerHTML;
     let snapshot = await prepare();
     assert.equal(snapshot.root.className, 'translation-print zh');
     assert.equal(snapshot.root.lang, 'zh-CN');
+    assert.equal(snapshot.root.style.fontFamily, 'Reader Serif');
+    assert.equal(snapshot.root.style.fontSize, '21px');
+    assert.equal(snapshot.root.style.fontWeight, '500');
+    assert.equal(snapshot.root.style.lineHeight, '2.2', 'Line height stays proportional for smaller text');
+    assert.equal(snapshot.root.style.getPropertyValue('--print-reader-width'), '512px');
+    assert.equal(snapshot.root.querySelector('h1').style.fontSize, '31.5px', 'Responsive heading size is captured');
+    assert.equal(snapshot.root.querySelector('#print-b-p-edit .zh').style.textAlign, 'justify');
+    assert(snapshot.root.querySelector('.paper-information .byline'), 'Disclosure replacement retains reader style scope');
     assert.equal(snapshot.failedImages, 0);
     assert.match(snapshot.warnings.join(' '), /1 页未完成翻译/);
     assert.match(snapshot.warnings.join(' '), /3 处缺少译文/);
@@ -83,9 +97,13 @@ function prepare(mode) {return PR.prepareTranslationPrint(mode);}
     assert([...snapshot.root.querySelectorAll('img')].every(image => image.loading === 'eager'));
     assert.equal(d.querySelector('#paper').innerHTML, readerBefore, 'Preparing a print snapshot never edits the reading DOM');
     const first = snapshot.root;
+    paper.style.fontFamily = 'Reader Sans'; paper.style.fontSize = '24px'; paper.style.lineHeight = '48px';
     snapshot = await prepare('bi');
     assert.equal(first.isConnected, false);
     assert.equal(snapshot.root.className, 'translation-print bi');
+    assert.equal(snapshot.root.style.fontFamily, 'Reader Sans');
+    assert.equal(snapshot.root.style.fontSize, '24px', 'Next export reads the latest typography');
+    assert.equal(snapshot.root.style.lineHeight, '2');
     assert.equal(d.querySelectorAll('#translationPrint').length, 1);
     snapshot.root.remove();
     // Font and image promises really block preparation; these are not fixed sleeps.
