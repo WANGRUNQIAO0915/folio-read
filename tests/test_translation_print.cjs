@@ -113,7 +113,8 @@ async function printLayout(mode) {
       hiddenReader: getComputedStyle(document.getElementById('stage')).display,
       preferences: {...PR.prefs}};
   }, expected);
-  assert(result.classes.includes(mode));
+  assert(result.classes.split(' ').includes('mode-' + mode));
+  assert(!result.classes.split(' ').includes('zh'), 'Mode is separate from paragraph classes');
   assert.equal(result.color, 'rgb(45, 45, 43)');
   assert.equal(result.background, 'rgb(255, 255, 255)');
   assert.deepEqual(result.type, expected.type, 'Export keeps actual reader typography, including responsive font size');

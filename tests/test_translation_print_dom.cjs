@@ -68,8 +68,9 @@ function prepare(mode) {return PR.prepareTranslationPrint(mode);}
     paper.querySelector('#b-p-edit .zh').style.textAlign = 'justify';
     const readerBefore = d.querySelector('#paper').innerHTML;
     let snapshot = await prepare();
-    assert.equal(snapshot.root.className, 'translation-print zh');
+    assert.equal(snapshot.root.className, 'translation-print mode-zh');
     assert.equal(snapshot.root.lang, 'zh-CN');
+    assert.equal(snapshot.root.classList.contains('zh'), false, 'Export mode must not match paragraph typography selectors');
     assert.equal(snapshot.root.style.fontFamily, 'Reader Serif');
     assert.equal(snapshot.root.style.fontSize, '21px');
     assert.equal(snapshot.root.style.fontWeight, '500');
@@ -100,7 +101,7 @@ function prepare(mode) {return PR.prepareTranslationPrint(mode);}
     paper.style.fontFamily = 'Reader Sans'; paper.style.fontSize = '24px'; paper.style.lineHeight = '48px';
     snapshot = await prepare('bi');
     assert.equal(first.isConnected, false);
-    assert.equal(snapshot.root.className, 'translation-print bi');
+    assert.equal(snapshot.root.className, 'translation-print mode-bi');
     assert.equal(snapshot.root.style.fontFamily, 'Reader Sans');
     assert.equal(snapshot.root.style.fontSize, '24px', 'Next export reads the latest typography');
     assert.equal(snapshot.root.style.lineHeight, '2');

@@ -64,7 +64,7 @@
     }
     document.getElementById('translationPrint')?.remove();
     const root = document.createElement('article');
-    root.id = 'translationPrint'; root.className = 'translation-print ' + mode;
+    root.id = 'translationPrint'; root.className = 'translation-print mode-' + mode;
     root.lang = 'zh-CN';
     root.innerHTML = PR.paperHtml(true);
     readerStyle(root);

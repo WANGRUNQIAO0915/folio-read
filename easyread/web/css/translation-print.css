@@ -17,7 +17,7 @@
 #translationPrint .blk-heading { break-after: avoid; page-break-after: avoid; }
 #translationPrint .blk::before { display: none; }
 #translationPrint .en, #translationPrint .en-title { display: none !important; }
-#translationPrint.bi .en, #translationPrint.bi .en-title, #translationPrint .original-primary { display: block !important; }
+#translationPrint.mode-bi .en, #translationPrint.mode-bi .en-title, #translationPrint .original-primary { display: block !important; }
 #translationPrint p, #translationPrint .zh, #translationPrint .en, #translationPrint li { orphans: 3; widows: 3; }
 #translationPrint .print-edition, #translationPrint .print-warning { font: 12px/1.6 var(--ui); margin: 1em 0; }
 #translationPrint .print-warning { border: 1px solid var(--rule-2); padding: .6em; }
