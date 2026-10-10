@@ -160,10 +160,19 @@ def start_window(home: Path, window, callback=None):
         raise RuntimeError('独立窗口需要 Microsoft Edge WebView2 Runtime。请安装微软官方 WebView2 Runtime 后重试。')
     icon = home / '.desktop-icon.ico'
     app_icon().save(icon, sizes=[(16, 16), (32, 32), (48, 48), (128, 128)])
+    from .institutional_browser import InstitutionalBrowser
+    institutional = InstitutionalBrowser(home, window, window.original_url.split("/read/")[0])
+    # Keep the session reachable and close its owned native form with the app.
+    window._institutional_browser = institutional
+    def close_institutional():
+        if institutional.form is not None and not institutional.form.IsDisposed:
+            institutional._ui(lambda: institutional.form.Close())
+    window.events.closing += close_institutional
     root = window.original_url.split('/read/')[0]
     menus = [Menu('文件', [
         MenuAction('回到文献库', lambda: window.load_url(root)),
         MenuAction('打开数据文件夹', lambda: os.startfile(home)),
+        MenuAction('机构访问并导入 PDF（临时会话）', institutional.open),
         MenuSeparator(), MenuAction('退出 Folio Read', window.destroy),
     ]), Menu('阅读', [
         MenuAction('返回', lambda: window.evaluate_js('history.back()')),

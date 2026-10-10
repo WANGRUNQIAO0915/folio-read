@@ -202,6 +202,25 @@ class Organization:
             write_json_atomic(self.path, out)
             return out
 
+    def import_pdf(self, data, filename, folder_id=None):
+        """Create a PDF and classify it against one locked folder snapshot.
+
+        Folder edits use the organization file lock, while workspace imports and
+        deletion use the lifecycle lock. Hold both in that order so a selected
+        folder cannot disappear between validation and assignment. Re-importing
+        identical bytes never moves or otherwise changes an existing paper.
+        """
+        with self.lib._lifecycle, dir_lock(self.lib.root, '.organization.lock'):
+            state = self.load()
+            fid = self.validate_folder(folder_id, state)
+            ws, fresh = self.lib.create_from_pdf(data, filename)
+            if fresh and fid:
+                pid = paper_id(ws)
+                prior = assignment(state, pid)
+                state['assignments'][pid] = {'folder_id': fid, 'tags': prior['tags'], 'version': version(state)}
+                write_json_atomic(self.path, state)
+            return ws, fresh
+
     def resolve(self, pid):
         if not isinstance(pid, str):
             raise ValueError('论文标识无效')

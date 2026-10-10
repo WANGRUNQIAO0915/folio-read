@@ -159,3 +159,7 @@ python -m easyread serve --port 8766 --open
 Folio Read 基于 [Edwardxlai/easyread](https://github.com/Edwardxlai/easyread) 开发，保留上游 [MIT 许可证](LICENSE)与[原版说明](docs/UPSTREAM-README.md)，在此基础上扩展个人资料库问答、研究主题、阅读工具、文献管理与 Windows 桌面交付。本项目与上游无官方关联。
 
 上游基线提交：`9e2feee99578c520ac2d0fd056e80bbee33bd897`。
+
+### Windows 机构访问
+
+Windows 独立窗口可从“文件 → 机构访问并导入 PDF”打开临时浏览器，由你自行完成学校认证并下载一篇 PDF，完成后自动校验、去重并导入。[使用方法与隐私边界](docs/institutional-access.md)。
