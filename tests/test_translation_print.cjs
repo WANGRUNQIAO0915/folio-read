@@ -91,7 +91,8 @@ async function printLayout(mode) {
       if (!element.getClientRects().length) return false;
       const box = element.getBoundingClientRect();
       return box.left < rect.left - 2 || box.right > rect.right + 2 || element.scrollWidth > element.clientWidth + 2;
-    }).map(element => ({class: element.className, width: element.clientWidth, scroll: element.scrollWidth}));
+    }).map(element => ({block: element.closest('.blk')?.dataset.id, class: element.className,
+      width: element.clientWidth, scroll: element.scrollWidth}));
     return {classes: root.className, color: getComputedStyle(root).color, background: getComputedStyle(root).backgroundColor,
       type: Object.fromEntries(Object.keys(expected.type).map(property => [property, getComputedStyle(root)[property]])),
       width: rect.width, fonts: document.fonts.status, overflow,

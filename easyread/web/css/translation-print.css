@@ -27,6 +27,9 @@
 #translationPrint .orig-page img, #translationPrint img[data-original-fallback] { display: block; width: auto; margin: 0 auto; }
 #translationPrint .caption { break-before: avoid; }
 #translationPrint .math-body, #translationPrint .tbl-wrap { max-width: 100%; overflow: visible; }
+/* Measure the entire centered equation, including its left overflow, before
+   fitting it. A full-width block's scrollWidth only includes the right half. */
+#translationPrint .math-body > .katex-display { width: max-content; margin: 0 auto; }
 #translationPrint .print-fit-table { width: 100%; }
 #translationPrint .print-fit-table th, #translationPrint .print-fit-table td { overflow-wrap: anywhere; white-space: normal; }
 #translationPrint thead { display: table-header-group; }
